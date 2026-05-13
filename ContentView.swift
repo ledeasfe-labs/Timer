@@ -1416,7 +1416,12 @@ struct AlarmRow: View {
                     startPoint: .topLeading, endPoint: .bottomTrailing
                 ), lineWidth: 0.8))
         )
-        .shadow(color: isPressing ? Color.red.opacity(0.72) : .clear, radius: isPressing ? 14 : 0)
+        .overlay(
+            Capsule()
+                .stroke(Color.red, lineWidth: 3)
+                .blur(radius: 4)
+                .opacity(isPressing ? 1 : 0)
+        )
         .offset(y: swipeOffset)
         .onLongPressGesture(minimumDuration: 0.5, pressing: { pressing in
             withAnimation(pressing ? .easeIn(duration: 0.4) : .easeOut(duration: 0.15)) {
@@ -1508,26 +1513,16 @@ struct ClockView: View {
     private var alarmArea: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
-                ForEach(alarms) { alarm in
-                    AlarmRow(
-                        alarm: Binding(
-                            get: { alarms.first { $0.id == alarm.id } ?? alarm },
-                            set: { new in
-                                if let i = alarms.firstIndex(where: { $0.id == alarm.id }) {
-                                    alarms[i] = new
-                                }
-                            }
-                        ),
-                        onSave: saveAlarms,
-                        onDelete: {
-                            var t = Transaction()
-                            t.disablesAnimations = true
-                            withTransaction(t) {
-                                alarms.removeAll { $0.id == alarm.id }
-                                saveAlarms()
-                            }
+                ForEach($alarms) { $alarm in
+                    let id = alarm.id
+                    AlarmRow(alarm: $alarm, onSave: saveAlarms, onDelete: {
+                        var t = Transaction()
+                        t.disablesAnimations = true
+                        withTransaction(t) {
+                            alarms.removeAll { $0.id == id }
+                            saveAlarms()
                         }
-                    )
+                    })
                     .transition(.asymmetric(
                         insertion: .scale(scale: 0.01, anchor: .leading).combined(with: .opacity),
                         removal: .identity
