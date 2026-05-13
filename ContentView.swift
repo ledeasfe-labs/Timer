@@ -1416,12 +1416,7 @@ struct AlarmRow: View {
                     startPoint: .topLeading, endPoint: .bottomTrailing
                 ), lineWidth: 0.8))
         )
-        .overlay(
-            Capsule()
-                .stroke(Color.red, lineWidth: 3)
-                .blur(radius: 4)
-                .opacity(isPressing ? 1 : 0)
-        )
+        .shadow(color: isPressing ? .red : .clear, radius: 5)
         .offset(y: swipeOffset)
         .onLongPressGesture(minimumDuration: 0.5, pressing: { pressing in
             withAnimation(pressing ? .easeIn(duration: 0.4) : .easeOut(duration: 0.15)) {
@@ -1465,6 +1460,7 @@ struct ClockView: View {
     @State private var now = Date()
     @State private var alarms: [Alarm] = []
     @State private var firedAlarmID: UUID? = nil
+    @State private var alarmInsertionCount = 0
 
     @AppStorage("accentHex") private var accentHex = "FF9500"
     private var accent: Color { Color(hex: accentHex) }
@@ -1513,16 +1509,21 @@ struct ClockView: View {
     private var alarmArea: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
-                ForEach($alarms) { $alarm in
+                ForEach(alarms) { alarm in
                     let id = alarm.id
-                    AlarmRow(alarm: $alarm, onSave: saveAlarms, onDelete: {
-                        var t = Transaction()
-                        t.disablesAnimations = true
-                        withTransaction(t) {
+                    AlarmRow(
+                        alarm: Binding(
+                            get: { alarms.first { $0.id == id } ?? alarm },
+                            set: { new in
+                                if let i = alarms.firstIndex(where: { $0.id == id }) { alarms[i] = new }
+                            }
+                        ),
+                        onSave: saveAlarms,
+                        onDelete: {
                             alarms.removeAll { $0.id == id }
                             saveAlarms()
                         }
-                    })
+                    )
                     .transition(.asymmetric(
                         insertion: .scale(scale: 0.01, anchor: .leading).combined(with: .opacity),
                         removal: .identity
@@ -1531,6 +1532,7 @@ struct ClockView: View {
                 if alarms.count < 5 {
                     Button {
                         withAnimation(.spring(response: 0.45, dampingFraction: 0.55)) {
+                            alarmInsertionCount += 1
                             alarms.append(Alarm(hour: 8, minute: 0, enabled: false))
                             saveAlarms()
                         }
@@ -1551,7 +1553,7 @@ struct ClockView: View {
                 }
             }
             .padding(.horizontal, 24)
-            .animation(.spring(response: 0.45, dampingFraction: 0.55), value: alarms.count)
+            .animation(.spring(response: 0.45, dampingFraction: 0.55), value: alarmInsertionCount)
         }
     }
 
