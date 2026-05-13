@@ -1390,57 +1390,57 @@ struct ClockView: View {
     }
 
     private var mainContent: some View {
-        VStack(spacing: 40) {
-            Spacer()
+        ZStack(alignment: .bottom) {
             Text(timeString)
-                .font(Theme.display(72))
+                .font(Theme.display(86))
                 .foregroundColor(Theme.text)
                 .monospacedDigit()
                 .gyroLeveled()
                 .frame(minHeight: 110)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             alarmWidget
-            Spacer()
+                .padding(.bottom, 52)
         }
     }
 
     private var alarmWidget: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 10) {
             Image(systemName: "alarm")
-                .font(.system(size: 14, weight: .light))
+                .font(.system(size: 12, weight: .light))
                 .foregroundColor(alarmEnabled ? accent : Theme.dim)
-                .frame(width: 24)
             HStack(spacing: 0) {
                 Text(String(format: "%02d", alarmHour))
-                    .font(Theme.display(32))
-                    .foregroundColor(alarmEnabled ? Theme.text : Theme.dim)
-                    .frame(minWidth: 40)
+                    .frame(minWidth: 26)
                     .contentShape(Rectangle())
                     .gesture(hourDrag)
-                Text(":")
-                    .font(Theme.display(32))
-                    .foregroundColor(Theme.dim)
-                    .padding(.horizontal, 2)
+                Text(":").padding(.horizontal, 1)
                 Text(String(format: "%02d", alarmMinute))
-                    .font(Theme.display(32))
-                    .foregroundColor(alarmEnabled ? Theme.text : Theme.dim)
-                    .frame(minWidth: 40)
+                    .frame(minWidth: 26)
                     .contentShape(Rectangle())
                     .gesture(minDrag)
             }
-            Spacer()
+            .font(.system(size: 15, weight: .thin, design: .rounded))
+            .foregroundColor(alarmEnabled ? Theme.text : Theme.dim)
+            .monospacedDigit()
             Toggle(isOn: $alarmEnabled) { EmptyView() }
                 .labelsHidden()
                 .tint(accent)
+                .scaleEffect(0.8)
                 .onChange(of: alarmEnabled) { _, _ in HapticManager.shared.tap() }
         }
-        .padding(.horizontal, 18).padding(.vertical, 14)
+        .padding(.horizontal, 14).padding(.vertical, 9)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.04))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.white.opacity(0.07), lineWidth: 0.6))
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .overlay(Capsule().fill(LinearGradient(
+                    colors: [Color.white.opacity(0.18), Color.clear],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                )))
+                .overlay(Capsule().stroke(LinearGradient(
+                    colors: [Color.white.opacity(0.30), Color.white.opacity(0.05)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                ), lineWidth: 0.8))
         )
-        .padding(.horizontal, 40)
     }
 
     private var hourDrag: some Gesture {
