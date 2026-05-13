@@ -1454,11 +1454,121 @@ struct AlarmRow: View {
     }
 }
 
+// MARK: - WorldClock
+
+let worldTimezones: [(city: String, id: String)] = [
+    ("New York",      "America/New_York"),
+    ("Los Angeles",   "America/Los_Angeles"),
+    ("Chicago",       "America/Chicago"),
+    ("London",        "Europe/London"),
+    ("Paris",         "Europe/Paris"),
+    ("Berlin",        "Europe/Berlin"),
+    ("Dubai",         "Asia/Dubai"),
+    ("Mumbai",        "Asia/Kolkata"),
+    ("Singapore",     "Asia/Singapore"),
+    ("Tokyo",         "Asia/Tokyo"),
+    ("Sydney",        "Australia/Sydney"),
+    ("São Paulo",     "America/Sao_Paulo"),
+    ("Toronto",       "America/Toronto"),
+    ("Seoul",         "Asia/Seoul"),
+    ("Beijing",       "Asia/Shanghai"),
+    ("Hong Kong",     "Asia/Hong_Kong"),
+    ("Moscow",        "Europe/Moscow"),
+    ("Johannesburg",  "Africa/Johannesburg"),
+    ("Mexico City",   "America/Mexico_City"),
+    ("Buenos Aires",  "America/Argentina/Buenos_Aires"),
+    ("Auckland",      "Pacific/Auckland"),
+]
+
+struct WorldClock: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var timeZoneIdentifier: String
+}
+
+// MARK: - WorldClockRow
+
+struct WorldClockRow: View {
+    @Binding var clock: WorldClock
+    var now: Date
+    var onDelete: () -> Void
+
+    @State private var swipeOffset: CGFloat = 0
+    @State private var isPressing = false
+
+    @AppStorage("accentHex") private var accentHex = "FF9500"
+    private var accent: Color { Color(hex: accentHex) }
+
+    private var tz: TimeZone { TimeZone(identifier: clock.timeZoneIdentifier) ?? .current }
+
+    private var timeString: String {
+        let f = DateFormatter(); f.dateFormat = "HH:mm"; f.timeZone = tz; return f.string(from: now)
+    }
+
+    private var utcOffsetString: String {
+        let s = tz.secondsFromGMT(for: now)
+        let h = s / 3600; let m = abs(s % 3600) / 60
+        return m == 0
+            ? (h >= 0 ? "UTC+\(h)" : "UTC\(h)")
+            : (h >= 0 ? "UTC+\(h):\(String(format: "%02d", m))" : "UTC\(h):\(String(format: "%02d", m))")
+    }
+
+    private var cityName: String {
+        worldTimezones.first { $0.id == clock.timeZoneIdentifier }?.city
+            ?? clock.timeZoneIdentifier.components(separatedBy: "/").last?
+                .replacingOccurrences(of: "_", with: " ")
+            ?? clock.timeZoneIdentifier
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "globe")
+                .font(.system(size: 12, weight: .light))
+                .foregroundColor(accent)
+            Text(cityName)
+                .font(.system(size: 12, weight: .light, design: .rounded))
+                .foregroundColor(Theme.text.opacity(0.75))
+            Text(utcOffsetString)
+                .font(.system(size: 9, weight: .light))
+                .foregroundColor(Theme.dim.opacity(0.6))
+            Spacer()
+            Text(timeString)
+                .font(.system(size: 15, weight: .thin, design: .rounded))
+                .foregroundColor(Theme.text)
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 14).padding(.vertical, 9)
+        .background(
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .overlay(Capsule().fill(LinearGradient(
+                    colors: [Color.white.opacity(0.18), Color.clear],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                )))
+                .overlay(Capsule().stroke(LinearGradient(
+                    colors: [Color.white.opacity(0.30), Color.white.opacity(0.05)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                ), lineWidth: 0.8))
+        )
+        .shadow(color: isPressing ? .red : .clear, radius: 5)
+        .offset(y: swipeOffset)
+        .onLongPressGesture(minimumDuration: 0.5, pressing: { pressing in
+            withAnimation(pressing ? .easeIn(duration: 0.4) : .easeOut(duration: 0.15)) {
+                isPressing = pressing
+            }
+        }) {
+            withAnimation(.easeOut(duration: 0.18)) { swipeOffset = -400 }
+            HapticManager.shared.tap()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { onDelete() }
+        }
+    }
+}
+
 // MARK: - ClockView
 
 struct ClockView: View {
     @State private var now = Date()
     @State private var alarms: [Alarm] = []
+    @State private var worldClocks: [WorldClock] = []
     @State private var firedAlarmID: UUID? = nil
 
     @AppStorage("accentHex") private var accentHex = "FF9500"
@@ -1474,7 +1584,7 @@ struct ClockView: View {
             if let id = firedAlarmID { firedContent(id: id) } else { mainContent }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { loadAlarms() }
+        .onAppear { loadAlarms(); loadWorldClocks() }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { date in
             now = date
             guard firedAlarmID == nil else { return }
@@ -1500,8 +1610,11 @@ struct ClockView: View {
                 .gyroLeveled()
                 .frame(minHeight: 110)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            alarmArea
-                .padding(.bottom, 80)
+            VStack(spacing: 8) {
+                worldClockArea
+                alarmArea
+            }
+            .padding(.bottom, 80)
         }
     }
 
@@ -1553,6 +1666,59 @@ struct ClockView: View {
                 }
             }
             .padding(.horizontal, 24)
+            .frame(minWidth: UIScreen.main.bounds.width, alignment: .center)
+        }
+    }
+
+    private var worldClockArea: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(worldClocks) { wc in
+                    let id = wc.id
+                    WorldClockRow(
+                        clock: Binding(
+                            get: { worldClocks.first { $0.id == id } ?? wc },
+                            set: { new in
+                                if let i = worldClocks.firstIndex(where: { $0.id == id }) { worldClocks[i] = new }
+                            }
+                        ),
+                        now: now,
+                        onDelete: {
+                            withAnimation(.spring(response: 0.45, dampingFraction: 0.72)) {
+                                worldClocks.removeAll { $0.id == id }
+                                saveWorldClocks()
+                            }
+                        }
+                    )
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.01, anchor: .leading).combined(with: .opacity),
+                        removal: .identity
+                    ))
+                }
+                if worldClocks.count < 8 {
+                    Button {
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.55)) {
+                            worldClocks.append(WorldClock(timeZoneIdentifier: "America/New_York"))
+                            saveWorldClocks()
+                        }
+                        HapticManager.shared.tap()
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(Theme.dim)
+                            .frame(width: 30, height: 30)
+                            .background(
+                                Circle()
+                                    .fill(.ultraThinMaterial)
+                                    .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 0.7))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .transition(.scale(scale: 0.01).combined(with: .opacity))
+                }
+            }
+            .padding(.horizontal, 24)
+            .frame(minWidth: UIScreen.main.bounds.width, alignment: .center)
         }
     }
 
@@ -1585,6 +1751,21 @@ struct ClockView: View {
     private func saveAlarms() {
         if let data = try? JSONEncoder().encode(alarms) {
             UserDefaults.standard.set(data, forKey: "alarmsData")
+        }
+    }
+
+    private func loadWorldClocks() {
+        guard let data = UserDefaults.standard.data(forKey: "worldClocksData"),
+              let decoded = try? JSONDecoder().decode([WorldClock].self, from: data) else {
+            worldClocks = []
+            return
+        }
+        worldClocks = decoded
+    }
+
+    private func saveWorldClocks() {
+        if let data = try? JSONEncoder().encode(worldClocks) {
+            UserDefaults.standard.set(data, forKey: "worldClocksData")
         }
     }
 }
