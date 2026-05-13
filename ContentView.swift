@@ -1352,81 +1352,53 @@ struct PomodoroView: View {
     }
 }
 
-// MARK: - ClockView
+// MARK: - Alarm
 
-struct ClockView: View {
-    @State private var now = Date()
-    @State private var alarmFired = false
+struct Alarm: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var hour: Int
+    var minute: Int
+    var enabled: Bool
+}
+
+// MARK: - AlarmRow
+
+struct AlarmRow: View {
+    @Binding var alarm: Alarm
+    var onSave: () -> Void
+
     @State private var hourDragging = false
     @State private var hourPrev: CGFloat = 0
-    @State private var minDragging  = false
-    @State private var minPrev: CGFloat  = 0
+    @State private var minDragging = false
+    @State private var minPrev: CGFloat = 0
 
-    @AppStorage("alarmHour")    private var alarmHour    = 7
-    @AppStorage("alarmMinute")  private var alarmMinute  = 0
-    @AppStorage("alarmEnabled") private var alarmEnabled = false
-    @AppStorage("accentHex")    private var accentHex    = "FF9500"
+    @AppStorage("accentHex") private var accentHex = "FF9500"
     private var accent: Color { Color(hex: accentHex) }
 
-    private var timeString: String {
-        let c = Calendar.current.dateComponents([.hour, .minute, .second], from: now)
-        return String(format: "%02d:%02d:%02d", c.hour ?? 0, c.minute ?? 0, c.second ?? 0)
-    }
-
     var body: some View {
-        ZStack {
-            if alarmFired { firedContent } else { mainContent }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { date in
-            now = date
-            guard alarmEnabled, !alarmFired else { return }
-            let c = Calendar.current.dateComponents([.hour, .minute, .second], from: date)
-            guard c.hour == alarmHour, c.minute == alarmMinute, (c.second ?? 1) == 0 else { return }
-            alarmFired = true
-            HapticManager.shared.complete()
-            SoundManager.shared.startLoop()
-        }
-    }
-
-    private var mainContent: some View {
-        ZStack(alignment: .bottom) {
-            Text(timeString)
-                .font(Theme.display(86))
-                .foregroundColor(Theme.text)
-                .monospacedDigit()
-                .gyroLeveled()
-                .frame(minHeight: 110)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            alarmWidget
-                .padding(.bottom, 52)
-        }
-    }
-
-    private var alarmWidget: some View {
         HStack(spacing: 10) {
             Image(systemName: "alarm")
                 .font(.system(size: 12, weight: .light))
-                .foregroundColor(alarmEnabled ? accent : Theme.dim)
+                .foregroundColor(alarm.enabled ? accent : Color.white.opacity(0.28))
             HStack(spacing: 0) {
-                Text(String(format: "%02d", alarmHour))
+                Text(String(format: "%02d", alarm.hour))
                     .frame(minWidth: 26)
                     .contentShape(Rectangle())
                     .gesture(hourDrag)
                 Text(":").padding(.horizontal, 1)
-                Text(String(format: "%02d", alarmMinute))
+                Text(String(format: "%02d", alarm.minute))
                     .frame(minWidth: 26)
                     .contentShape(Rectangle())
                     .gesture(minDrag)
             }
             .font(.system(size: 15, weight: .thin, design: .rounded))
-            .foregroundColor(alarmEnabled ? Theme.text : Theme.dim)
+            .foregroundColor(alarm.enabled ? Theme.text : Color.white.opacity(0.45))
             .monospacedDigit()
-            Toggle(isOn: $alarmEnabled) { EmptyView() }
+            Toggle(isOn: $alarm.enabled) { EmptyView() }
                 .labelsHidden()
                 .tint(accent)
                 .scaleEffect(0.8)
-                .onChange(of: alarmEnabled) { _, _ in HapticManager.shared.tap() }
+                .onChange(of: alarm.enabled) { _, _ in HapticManager.shared.tap(); onSave() }
         }
         .padding(.horizontal, 14).padding(.vertical, 9)
         .background(
@@ -1449,10 +1421,10 @@ struct ClockView: View {
                 if !hourDragging { hourDragging = true; hourPrev = drag.translation.height }
                 let delta = hourPrev - drag.translation.height; hourPrev = drag.translation.height
                 guard Swift.abs(delta) > 1 else { return }
-                let next = (alarmHour + (delta > 0 ? 1 : -1) + 24) % 24
-                if next != alarmHour { alarmHour = next; HapticManager.shared.tick() }
+                alarm.hour = (alarm.hour + (delta > 0 ? 1 : -1) + 24) % 24
+                HapticManager.shared.tick()
             }
-            .onEnded { _ in hourDragging = false; hourPrev = 0 }
+            .onEnded { _ in hourDragging = false; hourPrev = 0; onSave() }
     }
 
     private var minDrag: some Gesture {
@@ -1461,22 +1433,124 @@ struct ClockView: View {
                 if !minDragging { minDragging = true; minPrev = drag.translation.height }
                 let delta = minPrev - drag.translation.height; minPrev = drag.translation.height
                 guard Swift.abs(delta) > 1 else { return }
-                let next = (alarmMinute + (delta > 0 ? 1 : -1) + 60) % 60
-                if next != alarmMinute { alarmMinute = next; HapticManager.shared.tick() }
+                alarm.minute = (alarm.minute + (delta > 0 ? 1 : -1) + 60) % 60
+                HapticManager.shared.tick()
             }
-            .onEnded { _ in minDragging = false; minPrev = 0 }
+            .onEnded { _ in minDragging = false; minPrev = 0; onSave() }
+    }
+}
+
+// MARK: - ClockView
+
+struct ClockView: View {
+    @State private var now = Date()
+    @State private var alarms: [Alarm] = []
+    @State private var firedAlarmID: UUID? = nil
+
+    @AppStorage("accentHex") private var accentHex = "FF9500"
+    private var accent: Color { Color(hex: accentHex) }
+
+    private var timeString: String {
+        let c = Calendar.current.dateComponents([.hour, .minute, .second], from: now)
+        return String(format: "%02d:%02d:%02d", c.hour ?? 0, c.minute ?? 0, c.second ?? 0)
     }
 
-    private var firedContent: some View {
+    var body: some View {
+        ZStack {
+            if let id = firedAlarmID { firedContent(id: id) } else { mainContent }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear { loadAlarms() }
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { date in
+            now = date
+            guard firedAlarmID == nil else { return }
+            let c = Calendar.current.dateComponents([.hour, .minute, .second], from: date)
+            guard (c.second ?? 1) == 0 else { return }
+            for alarm in alarms where alarm.enabled {
+                if c.hour == alarm.hour && c.minute == alarm.minute {
+                    firedAlarmID = alarm.id
+                    HapticManager.shared.complete()
+                    SoundManager.shared.startLoop()
+                    break
+                }
+            }
+        }
+    }
+
+    private var mainContent: some View {
+        ZStack(alignment: .bottom) {
+            Text(timeString)
+                .font(Theme.display(86))
+                .foregroundColor(Theme.text)
+                .monospacedDigit()
+                .gyroLeveled()
+                .frame(minHeight: 110)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            alarmArea
+                .padding(.bottom, 80)
+        }
+    }
+
+    private var alarmArea: some View {
+        VStack(spacing: 8) {
+            ForEach($alarms) { $alarm in
+                AlarmRow(alarm: $alarm, onSave: saveAlarms)
+                    .transition(.scale(scale: 0.2, anchor: .bottom).combined(with: .opacity))
+            }
+            if alarms.count < 5 {
+                Button {
+                    withAnimation(.spring(response: 0.5, dampingFraction: 0.62)) {
+                        alarms.append(Alarm(hour: 8, minute: 0, enabled: false))
+                        saveAlarms()
+                    }
+                    HapticManager.shared.tap()
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(Theme.dim)
+                        .frame(width: 30, height: 30)
+                        .background(
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                                .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 0.7))
+                        )
+                }
+                .buttonStyle(.plain)
+                .transition(.scale(scale: 0.2).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.5, dampingFraction: 0.62), value: alarms.count)
+    }
+
+    private func firedContent(id: UUID) -> some View {
         VStack(spacing: 32) {
             Image(systemName: "alarm")
                 .font(.system(size: 52, weight: .thin))
                 .foregroundColor(accent)
             GlassCapsuleButton(label: "DISMISS") {
-                alarmFired = false
-                alarmEnabled = false
+                firedAlarmID = nil
+                if let i = alarms.firstIndex(where: { $0.id == id }) {
+                    alarms[i].enabled = false
+                    saveAlarms()
+                }
                 SoundManager.shared.stopLoop()
             }
+        }
+    }
+
+    private func loadAlarms() {
+        guard let data = UserDefaults.standard.data(forKey: "alarmsData"),
+              let decoded = try? JSONDecoder().decode([Alarm].self, from: data),
+              !decoded.isEmpty else {
+            alarms = [Alarm(hour: 7, minute: 0, enabled: false)]
+            return
+        }
+        alarms = decoded
+    }
+
+    private func saveAlarms() {
+        if let data = try? JSONEncoder().encode(alarms) {
+            UserDefaults.standard.set(data, forKey: "alarmsData")
         }
     }
 }
