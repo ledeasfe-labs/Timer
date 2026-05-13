@@ -1460,7 +1460,6 @@ struct ClockView: View {
     @State private var now = Date()
     @State private var alarms: [Alarm] = []
     @State private var firedAlarmID: UUID? = nil
-    @State private var alarmInsertionCount = 0
 
     @AppStorage("accentHex") private var accentHex = "FF9500"
     private var accent: Color { Color(hex: accentHex) }
@@ -1520,8 +1519,10 @@ struct ClockView: View {
                         ),
                         onSave: saveAlarms,
                         onDelete: {
-                            alarms.removeAll { $0.id == id }
-                            saveAlarms()
+                            withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                                alarms.removeAll { $0.id == id }
+                                saveAlarms()
+                            }
                         }
                     )
                     .transition(.asymmetric(
@@ -1532,7 +1533,6 @@ struct ClockView: View {
                 if alarms.count < 5 {
                     Button {
                         withAnimation(.spring(response: 0.45, dampingFraction: 0.55)) {
-                            alarmInsertionCount += 1
                             alarms.append(Alarm(hour: 8, minute: 0, enabled: false))
                             saveAlarms()
                         }
@@ -1553,7 +1553,6 @@ struct ClockView: View {
                 }
             }
             .padding(.horizontal, 24)
-            .animation(.spring(response: 0.45, dampingFraction: 0.55), value: alarmInsertionCount)
         }
     }
 
