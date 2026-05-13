@@ -1513,16 +1513,27 @@ struct ClockView: View {
     private var alarmArea: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
-                ForEach($alarms) { $alarm in
-                    AlarmRow(alarm: $alarm, onSave: saveAlarms) {
-                        withAnimation(.spring(response: 0.45, dampingFraction: 0.65)) {
-                            alarms.removeAll { $0.id == alarm.id }
-                            saveAlarms()
+                ForEach(alarms) { alarm in
+                    AlarmRow(
+                        alarm: Binding(
+                            get: { alarms.first { $0.id == alarm.id } ?? alarm },
+                            set: { new in
+                                if let i = alarms.firstIndex(where: { $0.id == alarm.id }) {
+                                    alarms[i] = new
+                                }
+                            }
+                        ),
+                        onSave: saveAlarms,
+                        onDelete: {
+                            withAnimation(.spring(response: 0.45, dampingFraction: 0.65)) {
+                                alarms.removeAll { $0.id == alarm.id }
+                                saveAlarms()
+                            }
                         }
-                    }
+                    )
                     .transition(.asymmetric(
                         insertion: .scale(scale: 0.01, anchor: .leading).combined(with: .opacity),
-                        removal: .opacity
+                        removal: .identity
                     ))
                 }
                 if alarms.count < 5 {
