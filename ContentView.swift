@@ -476,7 +476,7 @@ struct ModeSwitcher: View {
     var expanded: Bool = false
     var onNavigate: (Int) -> Void = { _ in }
     var onExpand: () -> Void = {}
-    private let names = ["TIMER", "WATCH", "INTERVAL", "POMODORO"]
+    private let names = ["CLOCK", "TIMER", "WATCH", "INTERVAL", "POMODORO"]
 
     @AppStorage("accentHex") private var accentHex = "FF9500"
     private var accent: Color { Color(hex: accentHex) }
@@ -506,7 +506,7 @@ struct ModeSwitcher: View {
                 .opacity(expanded ? 1 : 0)
                 .frame(width: expanded ? 36 : 0)
                 .clipped()
-                ForEach(0..<4, id: \.self) { i in
+                ForEach(0..<5, id: \.self) { i in
                     if i == page {
                         Button { expanded ? onNavigate(i) : onExpand() } label: {
                             Text(names[i])
@@ -1352,6 +1352,135 @@ struct PomodoroView: View {
     }
 }
 
+// MARK: - ClockView
+
+struct ClockView: View {
+    @State private var now = Date()
+    @State private var alarmFired = false
+    @State private var hourDragging = false
+    @State private var hourPrev: CGFloat = 0
+    @State private var minDragging  = false
+    @State private var minPrev: CGFloat  = 0
+
+    @AppStorage("alarmHour")    private var alarmHour    = 7
+    @AppStorage("alarmMinute")  private var alarmMinute  = 0
+    @AppStorage("alarmEnabled") private var alarmEnabled = false
+    @AppStorage("accentHex")    private var accentHex    = "FF9500"
+    private var accent: Color { Color(hex: accentHex) }
+
+    private var timeString: String {
+        let c = Calendar.current.dateComponents([.hour, .minute, .second], from: now)
+        return String(format: "%02d:%02d:%02d", c.hour ?? 0, c.minute ?? 0, c.second ?? 0)
+    }
+
+    var body: some View {
+        ZStack {
+            if alarmFired { firedContent } else { mainContent }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { date in
+            now = date
+            guard alarmEnabled, !alarmFired else { return }
+            let c = Calendar.current.dateComponents([.hour, .minute, .second], from: date)
+            guard c.hour == alarmHour, c.minute == alarmMinute, (c.second ?? 1) == 0 else { return }
+            alarmFired = true
+            HapticManager.shared.complete()
+            SoundManager.shared.startLoop()
+        }
+    }
+
+    private var mainContent: some View {
+        VStack(spacing: 40) {
+            Spacer()
+            Text(timeString)
+                .font(Theme.display(72))
+                .foregroundColor(Theme.text)
+                .monospacedDigit()
+                .gyroLeveled()
+                .frame(minHeight: 110)
+            alarmWidget
+            Spacer()
+        }
+    }
+
+    private var alarmWidget: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "alarm")
+                .font(.system(size: 14, weight: .light))
+                .foregroundColor(alarmEnabled ? accent : Theme.dim)
+                .frame(width: 24)
+            HStack(spacing: 0) {
+                Text(String(format: "%02d", alarmHour))
+                    .font(Theme.display(32))
+                    .foregroundColor(alarmEnabled ? Theme.text : Theme.dim)
+                    .frame(minWidth: 40)
+                    .contentShape(Rectangle())
+                    .gesture(hourDrag)
+                Text(":")
+                    .font(Theme.display(32))
+                    .foregroundColor(Theme.dim)
+                    .padding(.horizontal, 2)
+                Text(String(format: "%02d", alarmMinute))
+                    .font(Theme.display(32))
+                    .foregroundColor(alarmEnabled ? Theme.text : Theme.dim)
+                    .frame(minWidth: 40)
+                    .contentShape(Rectangle())
+                    .gesture(minDrag)
+            }
+            Spacer()
+            Toggle(isOn: $alarmEnabled) { EmptyView() }
+                .labelsHidden()
+                .tint(accent)
+                .onChange(of: alarmEnabled) { _, _ in HapticManager.shared.tap() }
+        }
+        .padding(.horizontal, 18).padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.04))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.white.opacity(0.07), lineWidth: 0.6))
+        )
+        .padding(.horizontal, 40)
+    }
+
+    private var hourDrag: some Gesture {
+        DragGesture(minimumDistance: 3)
+            .onChanged { drag in
+                if !hourDragging { hourDragging = true; hourPrev = drag.translation.height }
+                let delta = hourPrev - drag.translation.height; hourPrev = drag.translation.height
+                guard Swift.abs(delta) > 1 else { return }
+                let next = (alarmHour + (delta > 0 ? 1 : -1) + 24) % 24
+                if next != alarmHour { alarmHour = next; HapticManager.shared.tick() }
+            }
+            .onEnded { _ in hourDragging = false; hourPrev = 0 }
+    }
+
+    private var minDrag: some Gesture {
+        DragGesture(minimumDistance: 3)
+            .onChanged { drag in
+                if !minDragging { minDragging = true; minPrev = drag.translation.height }
+                let delta = minPrev - drag.translation.height; minPrev = drag.translation.height
+                guard Swift.abs(delta) > 1 else { return }
+                let next = (alarmMinute + (delta > 0 ? 1 : -1) + 60) % 60
+                if next != alarmMinute { alarmMinute = next; HapticManager.shared.tick() }
+            }
+            .onEnded { _ in minDragging = false; minPrev = 0 }
+    }
+
+    private var firedContent: some View {
+        VStack(spacing: 32) {
+            Image(systemName: "alarm")
+                .font(.system(size: 52, weight: .thin))
+                .foregroundColor(accent)
+            GlassCapsuleButton(label: "DISMISS") {
+                alarmFired = false
+                alarmEnabled = false
+                SoundManager.shared.stopLoop()
+            }
+        }
+    }
+}
+
 // MARK: - SettingsView
 
 struct SettingsView: View {
@@ -1687,7 +1816,7 @@ struct ContentView: View {
                 let h = drag.translation.width
                 let v = drag.translation.height
                 guard Swift.abs(h) > Swift.abs(v) * 1.3 else { return }
-                if h < -60     { navigate(to: Swift.min(3, page + 1)) }
+                if h < -60     { navigate(to: Swift.min(4, page + 1)) }
                 else if h > 60 { navigate(to: Swift.max(-1, page - 1)) }
             }
     }
@@ -1701,22 +1830,26 @@ struct ContentView: View {
                     .opacity(page == -1 ? 1 : 0)
                     .scaleEffect(page == -1 ? 1 : 0.95)
                     .allowsHitTesting(page == -1)
-                CountdownView(timer: countdownTimer)
+                ClockView()
                     .opacity(page == 0 ? 1 : 0)
                     .scaleEffect(page == 0 ? 1 : 0.95)
                     .allowsHitTesting(page == 0)
-                StopwatchView()
+                CountdownView(timer: countdownTimer)
                     .opacity(page == 1 ? 1 : 0)
                     .scaleEffect(page == 1 ? 1 : 0.95)
                     .allowsHitTesting(page == 1)
-                IntervalView()
+                StopwatchView()
                     .opacity(page == 2 ? 1 : 0)
                     .scaleEffect(page == 2 ? 1 : 0.95)
                     .allowsHitTesting(page == 2)
-                PomodoroView()
+                IntervalView()
                     .opacity(page == 3 ? 1 : 0)
                     .scaleEffect(page == 3 ? 1 : 0.95)
                     .allowsHitTesting(page == 3)
+                PomodoroView()
+                    .opacity(page == 4 ? 1 : 0)
+                    .scaleEffect(page == 4 ? 1 : 0.95)
+                    .allowsHitTesting(page == 4)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .ignoresSafeArea()
