@@ -2311,6 +2311,6 @@ struct ContentView: View {
                 .padding(.bottom, 22)
                 .allowsHitTesting(false)
         }
-        .simultaneousGesture(swipeGesture)
+        .gesture(swipeGesture)
     }
 }
