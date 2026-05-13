@@ -1373,6 +1373,7 @@ struct AlarmRow: View {
     @State private var minDragging = false
     @State private var minPrev: CGFloat = 0
     @State private var swipeOffset: CGFloat = 0
+    @State private var isPressing = false
 
     @AppStorage("accentHex") private var accentHex = "FF9500"
     private var accent: Color { Color(hex: accentHex) }
@@ -1410,13 +1411,19 @@ struct AlarmRow: View {
                     colors: [Color.white.opacity(0.18), Color.clear],
                     startPoint: .topLeading, endPoint: .bottomTrailing
                 )))
+                .overlay(Capsule().fill(Color.red.opacity(isPressing ? 0.13 : 0)))
                 .overlay(Capsule().stroke(LinearGradient(
                     colors: [Color.white.opacity(0.30), Color.white.opacity(0.05)],
                     startPoint: .topLeading, endPoint: .bottomTrailing
                 ), lineWidth: 0.8))
         )
+        .shadow(color: isPressing ? Color.red.opacity(0.72) : .clear, radius: isPressing ? 14 : 0)
         .offset(y: swipeOffset)
-        .onLongPressGesture(minimumDuration: 0.5) {
+        .onLongPressGesture(minimumDuration: 0.5, pressing: { pressing in
+            withAnimation(pressing ? .easeIn(duration: 0.4) : .easeOut(duration: 0.15)) {
+                isPressing = pressing
+            }
+        }) {
             withAnimation(.easeOut(duration: 0.18)) { swipeOffset = -400 }
             HapticManager.shared.tap()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { onDelete() }
@@ -1514,10 +1521,8 @@ struct ClockView: View {
                         ),
                         onSave: saveAlarms,
                         onDelete: {
-                            withAnimation(.spring(response: 0.45, dampingFraction: 0.65)) {
-                                alarms.removeAll { $0.id == alarm.id }
-                                saveAlarms()
-                            }
+                            alarms.removeAll { $0.id == alarm.id }
+                            saveAlarms()
                         }
                     )
                     .transition(.asymmetric(
@@ -1548,7 +1553,6 @@ struct ClockView: View {
                 }
             }
             .padding(.horizontal, 24)
-            .animation(.spring(response: 0.45, dampingFraction: 0.55), value: alarms.count)
         }
     }
 
