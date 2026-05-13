@@ -1416,22 +1416,11 @@ struct AlarmRow: View {
                 ), lineWidth: 0.8))
         )
         .offset(y: swipeOffset)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 20)
-                .onChanged { drag in
-                    guard drag.translation.height < -8 else { return }
-                    swipeOffset = drag.translation.height
-                }
-                .onEnded { drag in
-                    if drag.translation.height < -55 || drag.predictedEndTranslation.height < -110 {
-                        withAnimation(.easeOut(duration: 0.18)) { swipeOffset = -400 }
-                        HapticManager.shared.tap()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { onDelete() }
-                    } else {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) { swipeOffset = 0 }
-                    }
-                }
-        )
+        .onLongPressGesture(minimumDuration: 0.5) {
+            withAnimation(.easeOut(duration: 0.18)) { swipeOffset = -400 }
+            HapticManager.shared.tap()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { onDelete() }
+        }
     }
 
     private var hourDrag: some Gesture {
