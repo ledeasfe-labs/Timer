@@ -1411,7 +1411,6 @@ struct AlarmRow: View {
                     colors: [Color.white.opacity(0.18), Color.clear],
                     startPoint: .topLeading, endPoint: .bottomTrailing
                 )))
-                .overlay(Capsule().fill(Color.red.opacity(isPressing ? 0.13 : 0)))
                 .overlay(Capsule().stroke(LinearGradient(
                     colors: [Color.white.opacity(0.30), Color.white.opacity(0.05)],
                     startPoint: .topLeading, endPoint: .bottomTrailing
@@ -1521,8 +1520,12 @@ struct ClockView: View {
                         ),
                         onSave: saveAlarms,
                         onDelete: {
-                            alarms.removeAll { $0.id == alarm.id }
-                            saveAlarms()
+                            var t = Transaction()
+                            t.disablesAnimations = true
+                            withTransaction(t) {
+                                alarms.removeAll { $0.id == alarm.id }
+                                saveAlarms()
+                            }
                         }
                     )
                     .transition(.asymmetric(
@@ -1553,6 +1556,7 @@ struct ClockView: View {
                 }
             }
             .padding(.horizontal, 24)
+            .animation(.spring(response: 0.45, dampingFraction: 0.55), value: alarms.count)
         }
     }
 
