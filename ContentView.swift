@@ -631,7 +631,7 @@ struct CountdownView: View {
             if touchCount > 0 && pendingSeconds > 0 {
                 RadialGradient(colors: [accent.opacity(0.06), .clear],
                                center: .center, startRadius: 0, endRadius: 240)
-                    .ignoresSafeArea().allowsHitTesting(false)
+                .ignoresSafeArea().allowsHitTesting(false)
             }
             VStack(spacing: 14) {
                 Spacer()
@@ -641,7 +641,7 @@ struct CountdownView: View {
                     .gyroLeveled()
                 Text(
                     touchCount >= 2    ? "TWO FINGER — HOURS" :
-                    pendingSeconds == 0 ? "DRAG TO SET" : "RELEASE TO START"
+                        pendingSeconds == 0 ? "DRAG TO SET" : "RELEASE TO START"
                 )
                 .font(Theme.label).foregroundColor(Theme.dim).tracking(3)
                 Spacer()
@@ -689,7 +689,7 @@ struct CountdownView: View {
             )
             RadialGradient(colors: [accent.opacity(0.05), .clear],
                            center: .center, startRadius: 0, endRadius: 220)
-                .allowsHitTesting(false)
+            .allowsHitTesting(false)
             VStack(spacing: 20) {
                 Spacer()
                 activeDisplay.gyroLeveled()
@@ -945,7 +945,7 @@ struct DragSetCard: View {
                 .overlay(RoundedRectangle(cornerRadius: 20).stroke(
                     LinearGradient(
                         colors: isDragging ? [color.opacity(0.45), color.opacity(0.12)]
-                                           : [Color.white.opacity(0.13), Color.white.opacity(0.03)],
+                        : [Color.white.opacity(0.13), Color.white.opacity(0.03)],
                         startPoint: .topLeading, endPoint: .bottomTrailing
                     ), lineWidth: 0.8
                 ))
@@ -1186,8 +1186,8 @@ struct DragRow: View {
                     guard Swift.abs(delta) > 0.8 else { return }
                     let step = Swift.abs(delta) > 12 ? 5 : 1
                     let next = delta > 0
-                        ? Swift.min(range.upperBound, value + step)
-                        : Swift.max(range.lowerBound, value - step)
+                    ? Swift.min(range.upperBound, value + step)
+                    : Swift.max(range.lowerBound, value - step)
                     if next != value { value = next; HapticManager.shared.tick() }
                 }
                 .onEnded { _ in isDragging = false; prevTranslation = 0 }
@@ -1264,8 +1264,8 @@ struct PomodoroView: View {
                     guard Swift.abs(delta) > 0.8 else { return }
                     let step = Swift.abs(delta) > 12 ? 5 : 1
                     let next = delta > 0
-                        ? Swift.min(99, timer.focusMinutes + step)
-                        : Swift.max(1,  timer.focusMinutes - step)
+                    ? Swift.min(99, timer.focusMinutes + step)
+                    : Swift.max(1,  timer.focusMinutes - step)
                     if next != timer.focusMinutes { timer.focusMinutes = next; HapticManager.shared.tick() }
                 }
                 .onEnded { _ in focusIsDragging = false; focusPrevTranslation = 0 }
@@ -1278,7 +1278,7 @@ struct PomodoroView: View {
                              pulsing: timer.remaining <= 10 && timer.remaining > 0)
             RadialGradient(colors: [phaseColor.opacity(0.05), .clear],
                            center: .center, startRadius: 0, endRadius: 220)
-                .allowsHitTesting(false)
+            .allowsHitTesting(false)
             VStack(spacing: 0) {
                 Spacer()
                 HStack(spacing: 6) {
@@ -1580,15 +1580,15 @@ struct WorldClockRow: View {
         let s = tz.secondsFromGMT(for: now)
         let h = s / 3600; let m = abs(s % 3600) / 60
         return m == 0
-            ? (h >= 0 ? "UTC+\(h)" : "UTC\(h)")
-            : (h >= 0 ? "UTC+\(h):\(String(format: "%02d", m))" : "UTC\(h):\(String(format: "%02d", m))")
+        ? (h >= 0 ? "UTC+\(h)" : "UTC\(h)")
+        : (h >= 0 ? "UTC+\(h):\(String(format: "%02d", m))" : "UTC\(h):\(String(format: "%02d", m))")
     }
 
     private var cityName: String {
         worldTimezones.first { $0.id == clock.timeZoneIdentifier }?.city
-            ?? clock.timeZoneIdentifier.components(separatedBy: "/").last?
-                .replacingOccurrences(of: "_", with: " ")
-            ?? clock.timeZoneIdentifier
+        ?? clock.timeZoneIdentifier.components(separatedBy: "/").last?
+            .replacingOccurrences(of: "_", with: " ")
+        ?? clock.timeZoneIdentifier
     }
 
     var body: some View {
@@ -2035,9 +2035,9 @@ struct SettingsView: View {
                                     Spacer()
                                     Text(pitchSemitones == 0 ? "default"
                                          : (pitchSemitones > 0 ? "+\(pitchSemitones)" : "\(pitchSemitones)") + " st")
-                                        .font(.system(size: 10, weight: .light, design: .rounded))
-                                        .foregroundColor(pitchSemitones == 0 ? Theme.dim.opacity(0.4) : accent)
-                                        .monospacedDigit()
+                                    .font(.system(size: 10, weight: .light, design: .rounded))
+                                    .foregroundColor(pitchSemitones == 0 ? Theme.dim.opacity(0.4) : accent)
+                                    .monospacedDigit()
                                 }
                                 GeometryReader { geo in
                                     let w = geo.size.width
@@ -2115,7 +2115,7 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: – Helpers
+    // MARK: - Helpers
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
