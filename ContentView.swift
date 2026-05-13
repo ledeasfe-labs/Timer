@@ -1455,6 +1455,7 @@ struct AlarmRow: View {
                 .padding(.horizontal, 18).padding(.bottom, 14)
             }
         }
+        .frame(maxWidth: isExpanded ? 300 : nil)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -1625,13 +1626,13 @@ struct WorldClockRow: View {
                             } label: {
                                 Text(entry.city)
                                     .font(.system(size: 9, weight: isSel ? .semibold : .regular))
-                                    .foregroundColor(isSel ? Color.black.opacity(0.78) : Theme.dim)
+                                    .foregroundColor(isSel ? Color.black.opacity(0.78) : Color.white.opacity(0.60))
                                     .padding(.horizontal, 10).padding(.vertical, 6)
                                     .background(
                                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                            .fill(isSel ? cardColor : Color.white.opacity(0.06))
+                                            .fill(isSel ? cardColor : Color.white.opacity(0.12))
                                             .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                                .stroke(isSel ? Color.clear : Color.white.opacity(0.08), lineWidth: 0.7))
+                                                .stroke(isSel ? Color.clear : Color.white.opacity(0.18), lineWidth: 0.7))
                                     )
                             }
                             .buttonStyle(.plain)
@@ -1662,6 +1663,7 @@ struct WorldClockRow: View {
                 .padding(.horizontal, 18).padding(.bottom, 14)
             }
         }
+        .frame(maxWidth: isExpanded ? 300 : nil)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
