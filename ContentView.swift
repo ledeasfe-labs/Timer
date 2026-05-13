@@ -1359,12 +1359,31 @@ struct Alarm: Identifiable, Codable, Equatable {
     var hour: Int
     var minute: Int
     var enabled: Bool
+    var label: String = ""
+    var colorHex: String = "FF9500"
+
+    init(id: UUID = UUID(), hour: Int, minute: Int, enabled: Bool, label: String = "", colorHex: String = "FF9500") {
+        self.id = id; self.hour = hour; self.minute = minute; self.enabled = enabled
+        self.label = label; self.colorHex = colorHex
+    }
+    enum CodingKeys: String, CodingKey { case id, hour, minute, enabled, label, colorHex }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        hour = try c.decode(Int.self, forKey: .hour)
+        minute = try c.decode(Int.self, forKey: .minute)
+        enabled = try c.decode(Bool.self, forKey: .enabled)
+        label    = (try? c.decodeIfPresent(String.self, forKey: .label))    ?? ""
+        colorHex = (try? c.decodeIfPresent(String.self, forKey: .colorHex)) ?? "FF9500"
+    }
 }
 
 // MARK: - AlarmRow
 
 struct AlarmRow: View {
     @Binding var alarm: Alarm
+    var isExpanded: Bool
+    var onExpand: () -> Void
     var onSave: () -> Void
     var onDelete: () -> Void
 
@@ -1374,54 +1393,86 @@ struct AlarmRow: View {
     @State private var minPrev: CGFloat = 0
     @State private var swipeOffset: CGFloat = 0
     @State private var isPressing = false
+    @FocusState private var labelFocused: Bool
 
-    @AppStorage("accentHex") private var accentHex = "FF9500"
-    private var accent: Color { Color(hex: accentHex) }
+    private var cardColor: Color { Color(hex: alarm.colorHex) }
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "alarm")
-                .font(.system(size: 12, weight: .light))
-                .foregroundColor(alarm.enabled ? accent : Color.white.opacity(0.28))
-            HStack(spacing: 0) {
-                Text(String(format: "%02d", alarm.hour))
-                    .frame(minWidth: 26)
-                    .contentShape(Rectangle())
-                    .gesture(hourDrag)
-                Text(":").padding(.horizontal, 1)
-                Text(String(format: "%02d", alarm.minute))
-                    .frame(minWidth: 26)
-                    .contentShape(Rectangle())
-                    .gesture(minDrag)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "alarm")
+                    .font(.system(size: 12, weight: .light))
+                    .foregroundColor(alarm.enabled ? cardColor : Color.white.opacity(0.28))
+                HStack(spacing: 0) {
+                    Text(String(format: "%02d", alarm.hour))
+                        .frame(minWidth: 26).contentShape(Rectangle()).gesture(hourDrag)
+                    Text(":").padding(.horizontal, 1)
+                    Text(String(format: "%02d", alarm.minute))
+                        .frame(minWidth: 26).contentShape(Rectangle()).gesture(minDrag)
+                }
+                .font(.system(size: 15, weight: .thin, design: .rounded))
+                .foregroundColor(alarm.enabled ? Theme.text : Color.white.opacity(0.45))
+                .monospacedDigit()
+                if !isExpanded && !alarm.label.isEmpty {
+                    Text(alarm.label)
+                        .font(.system(size: 9, weight: .light))
+                        .foregroundColor(cardColor.opacity(0.50))
+                        .lineLimit(1).truncationMode(.tail)
+                        .transition(.opacity)
+                }
+                Toggle(isOn: $alarm.enabled) { EmptyView() }
+                    .labelsHidden().tint(cardColor).scaleEffect(0.8)
+                    .onChange(of: alarm.enabled) { _, _ in HapticManager.shared.tap(); onSave() }
             }
-            .font(.system(size: 15, weight: .thin, design: .rounded))
-            .foregroundColor(alarm.enabled ? Theme.text : Color.white.opacity(0.45))
-            .monospacedDigit()
-            Toggle(isOn: $alarm.enabled) { EmptyView() }
-                .labelsHidden()
-                .tint(accent)
-                .scaleEffect(0.8)
-                .onChange(of: alarm.enabled) { _, _ in HapticManager.shared.tap(); onSave() }
+            .padding(.horizontal, 14).padding(.vertical, 9)
+
+            if isExpanded {
+                Rectangle().fill(Color.white.opacity(0.08)).frame(height: 0.5).padding(.horizontal, 14)
+                TextField("Label...", text: $alarm.label)
+                    .font(.system(size: 12, weight: .light, design: .rounded))
+                    .foregroundColor(Theme.text.opacity(0.8)).tint(cardColor)
+                    .focused($labelFocused)
+                    .padding(.horizontal, 18).padding(.vertical, 9)
+                    .onChange(of: alarm.label) { _, _ in onSave() }
+                HStack(spacing: 10) {
+                    ForEach(AppSettings.accentPresets, id: \.hex) { preset in
+                        let isSel = alarm.colorHex == preset.hex
+                        Button {
+                            alarm.colorHex = preset.hex; HapticManager.shared.tap(); onSave()
+                        } label: {
+                            ZStack {
+                                Circle().fill(Color(hex: preset.hex)).frame(width: 20, height: 20)
+                                if isSel {
+                                    Circle().stroke(Color.white.opacity(0.80), lineWidth: 1.5)
+                                        .frame(width: 26, height: 26)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .animation(.spring(response: 0.22, dampingFraction: 0.62), value: isSel)
+                    }
+                }
+                .padding(.horizontal, 18).padding(.bottom, 14)
+            }
         }
-        .padding(.horizontal, 14).padding(.vertical, 9)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .background(
-            Capsule()
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(.ultraThinMaterial)
-                .overlay(Capsule().fill(LinearGradient(
+                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(LinearGradient(
                     colors: [Color.white.opacity(0.18), Color.clear],
                     startPoint: .topLeading, endPoint: .bottomTrailing
                 )))
-                .overlay(Capsule().stroke(LinearGradient(
+                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(LinearGradient(
                     colors: [Color.white.opacity(0.30), Color.white.opacity(0.05)],
                     startPoint: .topLeading, endPoint: .bottomTrailing
                 ), lineWidth: 0.8))
         )
         .shadow(color: isPressing ? .red : .clear, radius: 5)
         .offset(y: swipeOffset)
+        .onTapGesture { onExpand() }
         .onLongPressGesture(minimumDuration: 0.5, pressing: { pressing in
-            withAnimation(pressing ? .easeIn(duration: 0.4) : .easeOut(duration: 0.15)) {
-                isPressing = pressing
-            }
+            withAnimation(pressing ? .easeIn(duration: 0.4) : .easeOut(duration: 0.15)) { isPressing = pressing }
         }) {
             withAnimation(.easeOut(duration: 0.18)) { swipeOffset = -400 }
             HapticManager.shared.tap()
@@ -1432,25 +1483,27 @@ struct AlarmRow: View {
     private var hourDrag: some Gesture {
         DragGesture(minimumDistance: 3)
             .onChanged { drag in
+                guard !isExpanded else { return }
                 if !hourDragging { hourDragging = true; hourPrev = drag.translation.height }
                 let delta = hourPrev - drag.translation.height; hourPrev = drag.translation.height
                 guard Swift.abs(delta) > 1 else { return }
                 alarm.hour = (alarm.hour + (delta > 0 ? 1 : -1) + 24) % 24
                 HapticManager.shared.tick()
             }
-            .onEnded { _ in hourDragging = false; hourPrev = 0; onSave() }
+            .onEnded { _ in guard !isExpanded else { return }; hourDragging = false; hourPrev = 0; onSave() }
     }
 
     private var minDrag: some Gesture {
         DragGesture(minimumDistance: 3)
             .onChanged { drag in
+                guard !isExpanded else { return }
                 if !minDragging { minDragging = true; minPrev = drag.translation.height }
                 let delta = minPrev - drag.translation.height; minPrev = drag.translation.height
                 guard Swift.abs(delta) > 1 else { return }
                 alarm.minute = (alarm.minute + (delta > 0 ? 1 : -1) + 60) % 60
                 HapticManager.shared.tick()
             }
-            .onEnded { _ in minDragging = false; minPrev = 0; onSave() }
+            .onEnded { _ in guard !isExpanded else { return }; minDragging = false; minPrev = 0; onSave() }
     }
 }
 
@@ -1483,6 +1536,21 @@ let worldTimezones: [(city: String, id: String)] = [
 struct WorldClock: Identifiable, Codable, Equatable {
     var id = UUID()
     var timeZoneIdentifier: String
+    var label: String = ""
+    var colorHex: String = "5AC8FA"
+
+    init(id: UUID = UUID(), timeZoneIdentifier: String, label: String = "", colorHex: String = "5AC8FA") {
+        self.id = id; self.timeZoneIdentifier = timeZoneIdentifier
+        self.label = label; self.colorHex = colorHex
+    }
+    enum CodingKeys: String, CodingKey { case id, timeZoneIdentifier, label, colorHex }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        timeZoneIdentifier = try c.decode(String.self, forKey: .timeZoneIdentifier)
+        label    = (try? c.decodeIfPresent(String.self, forKey: .label))    ?? ""
+        colorHex = (try? c.decodeIfPresent(String.self, forKey: .colorHex)) ?? "5AC8FA"
+    }
 }
 
 // MARK: - WorldClockRow
@@ -1490,14 +1558,16 @@ struct WorldClock: Identifiable, Codable, Equatable {
 struct WorldClockRow: View {
     @Binding var clock: WorldClock
     var now: Date
+    var isExpanded: Bool
+    var onExpand: () -> Void
+    var onSave: () -> Void
     var onDelete: () -> Void
 
     @State private var swipeOffset: CGFloat = 0
     @State private var isPressing = false
+    @FocusState private var labelFocused: Bool
 
-    @AppStorage("accentHex") private var accentHex = "FF9500"
-    private var accent: Color { Color(hex: accentHex) }
-
+    private var cardColor: Color { Color(hex: clock.colorHex) }
     private var tz: TimeZone { TimeZone(identifier: clock.timeZoneIdentifier) ?? .current }
 
     private var timeString: String {
@@ -1520,40 +1590,96 @@ struct WorldClockRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "globe")
-                .font(.system(size: 12, weight: .light))
-                .foregroundColor(accent)
-            Text(cityName)
-                .font(.system(size: 12, weight: .light, design: .rounded))
-                .foregroundColor(Theme.text.opacity(0.75))
-            Text(utcOffsetString)
-                .font(.system(size: 9, weight: .light))
-                .foregroundColor(Theme.dim.opacity(0.6))
-            Text(timeString)
-                .font(.system(size: 15, weight: .thin, design: .rounded))
-                .foregroundColor(Theme.text)
-                .monospacedDigit()
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "globe")
+                    .font(.system(size: 12, weight: .light))
+                    .foregroundColor(cardColor)
+                Text(clock.label.isEmpty ? cityName : clock.label)
+                    .font(.system(size: 12, weight: .light, design: .rounded))
+                    .foregroundColor(Theme.text.opacity(0.75))
+                Text(utcOffsetString)
+                    .font(.system(size: 9, weight: .light))
+                    .foregroundColor(Theme.dim.opacity(0.6))
+                Text(timeString)
+                    .font(.system(size: 15, weight: .thin, design: .rounded))
+                    .foregroundColor(Theme.text).monospacedDigit()
+            }
+            .padding(.horizontal, 14).padding(.vertical, 9)
+
+            if isExpanded {
+                Rectangle().fill(Color.white.opacity(0.08)).frame(height: 0.5).padding(.horizontal, 14)
+                TextField("Label...", text: $clock.label)
+                    .font(.system(size: 12, weight: .light, design: .rounded))
+                    .foregroundColor(Theme.text.opacity(0.8)).tint(cardColor)
+                    .focused($labelFocused)
+                    .padding(.horizontal, 18).padding(.vertical, 9)
+                    .onChange(of: clock.label) { _, _ in onSave() }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(worldTimezones, id: \.id) { entry in
+                            let isSel = clock.timeZoneIdentifier == entry.id
+                            Button {
+                                clock.timeZoneIdentifier = entry.id
+                                HapticManager.shared.tap(); onSave()
+                            } label: {
+                                Text(entry.city)
+                                    .font(.system(size: 9, weight: isSel ? .semibold : .regular))
+                                    .foregroundColor(isSel ? Color.black.opacity(0.78) : Theme.dim)
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                            .fill(isSel ? cardColor : Color.white.opacity(0.06))
+                                            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                                .stroke(isSel ? Color.clear : Color.white.opacity(0.08), lineWidth: 0.7))
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .animation(.spring(response: 0.22, dampingFraction: 0.7), value: isSel)
+                        }
+                    }
+                    .padding(.horizontal, 18)
+                }
+                .padding(.vertical, 4)
+                HStack(spacing: 10) {
+                    ForEach(AppSettings.accentPresets, id: \.hex) { preset in
+                        let isSel = clock.colorHex == preset.hex
+                        Button {
+                            clock.colorHex = preset.hex; HapticManager.shared.tap(); onSave()
+                        } label: {
+                            ZStack {
+                                Circle().fill(Color(hex: preset.hex)).frame(width: 20, height: 20)
+                                if isSel {
+                                    Circle().stroke(Color.white.opacity(0.80), lineWidth: 1.5)
+                                        .frame(width: 26, height: 26)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .animation(.spring(response: 0.22, dampingFraction: 0.62), value: isSel)
+                    }
+                }
+                .padding(.horizontal, 18).padding(.bottom, 14)
+            }
         }
-        .padding(.horizontal, 14).padding(.vertical, 9)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .background(
-            Capsule()
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(.ultraThinMaterial)
-                .overlay(Capsule().fill(LinearGradient(
+                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(LinearGradient(
                     colors: [Color.white.opacity(0.18), Color.clear],
                     startPoint: .topLeading, endPoint: .bottomTrailing
                 )))
-                .overlay(Capsule().stroke(LinearGradient(
+                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(LinearGradient(
                     colors: [Color.white.opacity(0.30), Color.white.opacity(0.05)],
                     startPoint: .topLeading, endPoint: .bottomTrailing
                 ), lineWidth: 0.8))
         )
         .shadow(color: isPressing ? .red : .clear, radius: 5)
         .offset(y: swipeOffset)
+        .onTapGesture { onExpand() }
         .onLongPressGesture(minimumDuration: 0.5, pressing: { pressing in
-            withAnimation(pressing ? .easeIn(duration: 0.4) : .easeOut(duration: 0.15)) {
-                isPressing = pressing
-            }
+            withAnimation(pressing ? .easeIn(duration: 0.4) : .easeOut(duration: 0.15)) { isPressing = pressing }
         }) {
             withAnimation(.easeOut(duration: 0.18)) { swipeOffset = -400 }
             HapticManager.shared.tap()
@@ -1569,6 +1695,8 @@ struct ClockView: View {
     @State private var alarms: [Alarm] = []
     @State private var worldClocks: [WorldClock] = []
     @State private var firedAlarmID: UUID? = nil
+    @State private var expandedAlarmID: UUID? = nil
+    @State private var expandedClockID: UUID? = nil
 
     @AppStorage("accentHex") private var accentHex = "FF9500"
     private var accent: Color { Color(hex: accentHex) }
@@ -1629,10 +1757,19 @@ struct ClockView: View {
                                 if let i = alarms.firstIndex(where: { $0.id == id }) { alarms[i] = new }
                             }
                         ),
+                        isExpanded: expandedAlarmID == id,
+                        onExpand: {
+                            withAnimation(.spring(response: 0.38, dampingFraction: 0.72)) {
+                                expandedAlarmID = expandedAlarmID == id ? nil : id
+                                expandedClockID = nil
+                            }
+                            HapticManager.shared.tap()
+                        },
                         onSave: saveAlarms,
                         onDelete: {
                             withAnimation(.spring(response: 0.45, dampingFraction: 0.72)) {
                                 alarms.removeAll { $0.id == id }
+                                if expandedAlarmID == id { expandedAlarmID = nil }
                                 saveAlarms()
                             }
                         }
@@ -1667,6 +1804,7 @@ struct ClockView: View {
             .padding(.horizontal, 24)
             .frame(minWidth: UIScreen.main.bounds.width, alignment: .center)
         }
+        .scrollDismissesKeyboard(.immediately)
     }
 
     private var worldClockArea: some View {
@@ -1682,9 +1820,19 @@ struct ClockView: View {
                             }
                         ),
                         now: now,
+                        isExpanded: expandedClockID == id,
+                        onExpand: {
+                            withAnimation(.spring(response: 0.38, dampingFraction: 0.72)) {
+                                expandedClockID = expandedClockID == id ? nil : id
+                                expandedAlarmID = nil
+                            }
+                            HapticManager.shared.tap()
+                        },
+                        onSave: saveWorldClocks,
                         onDelete: {
                             withAnimation(.spring(response: 0.45, dampingFraction: 0.72)) {
                                 worldClocks.removeAll { $0.id == id }
+                                if expandedClockID == id { expandedClockID = nil }
                                 saveWorldClocks()
                             }
                         }
@@ -1719,6 +1867,7 @@ struct ClockView: View {
             .padding(.horizontal, 24)
             .frame(minWidth: UIScreen.main.bounds.width, alignment: .center)
         }
+        .scrollDismissesKeyboard(.immediately)
     }
 
     private func firedContent(id: UUID) -> some View {
