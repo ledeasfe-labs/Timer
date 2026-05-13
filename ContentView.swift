@@ -1420,6 +1420,7 @@ struct AlarmRow: View {
                         .lineLimit(1).truncationMode(.tail)
                         .transition(.opacity)
                 }
+                Spacer()
                 Toggle(isOn: $alarm.enabled) { EmptyView() }
                     .labelsHidden().tint(cardColor).scaleEffect(0.8)
                     .onChange(of: alarm.enabled) { _, _ in HapticManager.shared.tap(); onSave() }
@@ -1455,7 +1456,7 @@ struct AlarmRow: View {
                 .padding(.horizontal, 18).padding(.bottom, 14)
             }
         }
-        .frame(maxWidth: isExpanded ? 300 : nil)
+        .frame(width: isExpanded ? 300 : 240)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -1602,6 +1603,7 @@ struct WorldClockRow: View {
                 Text(utcOffsetString)
                     .font(.system(size: 9, weight: .light))
                     .foregroundColor(Theme.dim.opacity(0.6))
+                Spacer()
                 Text(timeString)
                     .font(.system(size: 15, weight: .thin, design: .rounded))
                     .foregroundColor(Theme.text).monospacedDigit()
@@ -1663,7 +1665,7 @@ struct WorldClockRow: View {
                 .padding(.horizontal, 18).padding(.bottom, 14)
             }
         }
-        .frame(maxWidth: isExpanded ? 300 : nil)
+        .frame(width: isExpanded ? 300 : 240)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
