@@ -1519,7 +1519,7 @@ struct ClockView: View {
                         ),
                         onSave: saveAlarms,
                         onDelete: {
-                            withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                            withAnimation(.spring(response: 0.32, dampingFraction: 0.65)) {
                                 alarms.removeAll { $0.id == id }
                                 saveAlarms()
                             }
