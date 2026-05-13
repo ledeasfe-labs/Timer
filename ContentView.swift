@@ -1366,11 +1366,13 @@ struct Alarm: Identifiable, Codable, Equatable {
 struct AlarmRow: View {
     @Binding var alarm: Alarm
     var onSave: () -> Void
+    var onDelete: () -> Void
 
     @State private var hourDragging = false
     @State private var hourPrev: CGFloat = 0
     @State private var minDragging = false
     @State private var minPrev: CGFloat = 0
+    @State private var swipeOffset: CGFloat = 0
 
     @AppStorage("accentHex") private var accentHex = "FF9500"
     private var accent: Color { Color(hex: accentHex) }
@@ -1412,6 +1414,23 @@ struct AlarmRow: View {
                     colors: [Color.white.opacity(0.30), Color.white.opacity(0.05)],
                     startPoint: .topLeading, endPoint: .bottomTrailing
                 ), lineWidth: 0.8))
+        )
+        .offset(y: swipeOffset)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 20)
+                .onChanged { drag in
+                    guard drag.translation.height < -8 else { return }
+                    swipeOffset = drag.translation.height
+                }
+                .onEnded { drag in
+                    if drag.translation.height < -55 || drag.predictedEndTranslation.height < -110 {
+                        withAnimation(.easeOut(duration: 0.18)) { swipeOffset = -400 }
+                        HapticManager.shared.tap()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { onDelete() }
+                    } else {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) { swipeOffset = 0 }
+                    }
+                }
         )
     }
 
@@ -1492,34 +1511,45 @@ struct ClockView: View {
     }
 
     private var alarmArea: some View {
-        VStack(spacing: 8) {
-            ForEach($alarms) { $alarm in
-                AlarmRow(alarm: $alarm, onSave: saveAlarms)
-                    .transition(.scale(scale: 0.2, anchor: .bottom).combined(with: .opacity))
-            }
-            if alarms.count < 5 {
-                Button {
-                    withAnimation(.spring(response: 0.5, dampingFraction: 0.62)) {
-                        alarms.append(Alarm(hour: 8, minute: 0, enabled: false))
-                        saveAlarms()
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach($alarms) { $alarm in
+                    AlarmRow(alarm: $alarm, onSave: saveAlarms) {
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.65)) {
+                            alarms.removeAll { $0.id == alarm.id }
+                            saveAlarms()
+                        }
                     }
-                    HapticManager.shared.tap()
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(Theme.dim)
-                        .frame(width: 30, height: 30)
-                        .background(
-                            Circle()
-                                .fill(.ultraThinMaterial)
-                                .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 0.7))
-                        )
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.01, anchor: .leading).combined(with: .opacity),
+                        removal: .opacity
+                    ))
                 }
-                .buttonStyle(.plain)
-                .transition(.scale(scale: 0.2).combined(with: .opacity))
+                if alarms.count < 5 {
+                    Button {
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.55)) {
+                            alarms.append(Alarm(hour: 8, minute: 0, enabled: false))
+                            saveAlarms()
+                        }
+                        HapticManager.shared.tap()
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(Theme.dim)
+                            .frame(width: 30, height: 30)
+                            .background(
+                                Circle()
+                                    .fill(.ultraThinMaterial)
+                                    .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 0.7))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .transition(.scale(scale: 0.01).combined(with: .opacity))
+                }
             }
+            .padding(.horizontal, 24)
+            .animation(.spring(response: 0.45, dampingFraction: 0.55), value: alarms.count)
         }
-        .animation(.spring(response: 0.5, dampingFraction: 0.62), value: alarms.count)
     }
 
     private func firedContent(id: UUID) -> some View {
