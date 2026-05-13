@@ -476,7 +476,7 @@ struct ModeSwitcher: View {
     var expanded: Bool = false
     var onNavigate: (Int) -> Void = { _ in }
     var onExpand: () -> Void = {}
-    private let names = ["TIMER", "WATCH", "INTERVAL", "POMODORO"]
+    private let names = ["CLOCK", "TIMER", "WATCH", "INTERVAL", "POMODORO"]
 
     @AppStorage("accentHex") private var accentHex = "FF9500"
     private var accent: Color { Color(hex: accentHex) }
@@ -506,7 +506,7 @@ struct ModeSwitcher: View {
                 .opacity(expanded ? 1 : 0)
                 .frame(width: expanded ? 36 : 0)
                 .clipped()
-                ForEach(0..<4, id: \.self) { i in
+                ForEach(0..<5, id: \.self) { i in
                     if i == page {
                         Button { expanded ? onNavigate(i) : onExpand() } label: {
                             Text(names[i])
@@ -1352,6 +1352,243 @@ struct PomodoroView: View {
     }
 }
 
+// MARK: - Alarm
+
+struct Alarm: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var hour: Int
+    var minute: Int
+    var enabled: Bool
+}
+
+// MARK: - AlarmRow
+
+struct AlarmRow: View {
+    @Binding var alarm: Alarm
+    var onSave: () -> Void
+    var onDelete: () -> Void
+
+    @State private var hourDragging = false
+    @State private var hourPrev: CGFloat = 0
+    @State private var minDragging = false
+    @State private var minPrev: CGFloat = 0
+    @State private var swipeOffset: CGFloat = 0
+    @State private var isPressing = false
+
+    @AppStorage("accentHex") private var accentHex = "FF9500"
+    private var accent: Color { Color(hex: accentHex) }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "alarm")
+                .font(.system(size: 12, weight: .light))
+                .foregroundColor(alarm.enabled ? accent : Color.white.opacity(0.28))
+            HStack(spacing: 0) {
+                Text(String(format: "%02d", alarm.hour))
+                    .frame(minWidth: 26)
+                    .contentShape(Rectangle())
+                    .gesture(hourDrag)
+                Text(":").padding(.horizontal, 1)
+                Text(String(format: "%02d", alarm.minute))
+                    .frame(minWidth: 26)
+                    .contentShape(Rectangle())
+                    .gesture(minDrag)
+            }
+            .font(.system(size: 15, weight: .thin, design: .rounded))
+            .foregroundColor(alarm.enabled ? Theme.text : Color.white.opacity(0.45))
+            .monospacedDigit()
+            Toggle(isOn: $alarm.enabled) { EmptyView() }
+                .labelsHidden()
+                .tint(accent)
+                .scaleEffect(0.8)
+                .onChange(of: alarm.enabled) { _, _ in HapticManager.shared.tap(); onSave() }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 9)
+        .background(
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .overlay(Capsule().fill(LinearGradient(
+                    colors: [Color.white.opacity(0.18), Color.clear],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                )))
+                .overlay(Capsule().stroke(LinearGradient(
+                    colors: [Color.white.opacity(0.30), Color.white.opacity(0.05)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                ), lineWidth: 0.8))
+        )
+        .shadow(color: isPressing ? .red : .clear, radius: 5)
+        .offset(y: swipeOffset)
+        .onLongPressGesture(minimumDuration: 0.5, pressing: { pressing in
+            withAnimation(pressing ? .easeIn(duration: 0.4) : .easeOut(duration: 0.15)) {
+                isPressing = pressing
+            }
+        }) {
+            withAnimation(.easeOut(duration: 0.18)) { swipeOffset = -400 }
+            HapticManager.shared.tap()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { onDelete() }
+        }
+    }
+
+    private var hourDrag: some Gesture {
+        DragGesture(minimumDistance: 3)
+            .onChanged { drag in
+                if !hourDragging { hourDragging = true; hourPrev = drag.translation.height }
+                let delta = hourPrev - drag.translation.height; hourPrev = drag.translation.height
+                guard Swift.abs(delta) > 1 else { return }
+                alarm.hour = (alarm.hour + (delta > 0 ? 1 : -1) + 24) % 24
+                HapticManager.shared.tick()
+            }
+            .onEnded { _ in hourDragging = false; hourPrev = 0; onSave() }
+    }
+
+    private var minDrag: some Gesture {
+        DragGesture(minimumDistance: 3)
+            .onChanged { drag in
+                if !minDragging { minDragging = true; minPrev = drag.translation.height }
+                let delta = minPrev - drag.translation.height; minPrev = drag.translation.height
+                guard Swift.abs(delta) > 1 else { return }
+                alarm.minute = (alarm.minute + (delta > 0 ? 1 : -1) + 60) % 60
+                HapticManager.shared.tick()
+            }
+            .onEnded { _ in minDragging = false; minPrev = 0; onSave() }
+    }
+}
+
+// MARK: - ClockView
+
+struct ClockView: View {
+    @State private var now = Date()
+    @State private var alarms: [Alarm] = []
+    @State private var firedAlarmID: UUID? = nil
+
+    @AppStorage("accentHex") private var accentHex = "FF9500"
+    private var accent: Color { Color(hex: accentHex) }
+
+    private var timeString: String {
+        let c = Calendar.current.dateComponents([.hour, .minute, .second], from: now)
+        return String(format: "%02d:%02d:%02d", c.hour ?? 0, c.minute ?? 0, c.second ?? 0)
+    }
+
+    var body: some View {
+        ZStack {
+            if let id = firedAlarmID { firedContent(id: id) } else { mainContent }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear { loadAlarms() }
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { date in
+            now = date
+            guard firedAlarmID == nil else { return }
+            let c = Calendar.current.dateComponents([.hour, .minute, .second], from: date)
+            guard (c.second ?? 1) == 0 else { return }
+            for alarm in alarms where alarm.enabled {
+                if c.hour == alarm.hour && c.minute == alarm.minute {
+                    firedAlarmID = alarm.id
+                    HapticManager.shared.complete()
+                    SoundManager.shared.startLoop()
+                    break
+                }
+            }
+        }
+    }
+
+    private var mainContent: some View {
+        ZStack(alignment: .bottom) {
+            Text(timeString)
+                .font(Theme.display(86))
+                .foregroundColor(Theme.text)
+                .monospacedDigit()
+                .gyroLeveled()
+                .frame(minHeight: 110)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            alarmArea
+                .padding(.bottom, 80)
+        }
+    }
+
+    private var alarmArea: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(alarms) { alarm in
+                    let id = alarm.id
+                    AlarmRow(
+                        alarm: Binding(
+                            get: { alarms.first { $0.id == id } ?? alarm },
+                            set: { new in
+                                if let i = alarms.firstIndex(where: { $0.id == id }) { alarms[i] = new }
+                            }
+                        ),
+                        onSave: saveAlarms,
+                        onDelete: {
+                            withAnimation(.spring(response: 0.45, dampingFraction: 0.72)) {
+                                alarms.removeAll { $0.id == id }
+                                saveAlarms()
+                            }
+                        }
+                    )
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.01, anchor: .leading).combined(with: .opacity),
+                        removal: .identity
+                    ))
+                }
+                if alarms.count < 5 {
+                    Button {
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.55)) {
+                            alarms.append(Alarm(hour: 8, minute: 0, enabled: false))
+                            saveAlarms()
+                        }
+                        HapticManager.shared.tap()
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(Theme.dim)
+                            .frame(width: 30, height: 30)
+                            .background(
+                                Circle()
+                                    .fill(.ultraThinMaterial)
+                                    .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 0.7))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .transition(.scale(scale: 0.01).combined(with: .opacity))
+                }
+            }
+            .padding(.horizontal, 24)
+        }
+    }
+
+    private func firedContent(id: UUID) -> some View {
+        VStack(spacing: 32) {
+            Image(systemName: "alarm")
+                .font(.system(size: 52, weight: .thin))
+                .foregroundColor(accent)
+            GlassCapsuleButton(label: "DISMISS") {
+                firedAlarmID = nil
+                if let i = alarms.firstIndex(where: { $0.id == id }) {
+                    alarms[i].enabled = false
+                    saveAlarms()
+                }
+                SoundManager.shared.stopLoop()
+            }
+        }
+    }
+
+    private func loadAlarms() {
+        guard let data = UserDefaults.standard.data(forKey: "alarmsData"),
+              let decoded = try? JSONDecoder().decode([Alarm].self, from: data),
+              !decoded.isEmpty else {
+            alarms = [Alarm(hour: 7, minute: 0, enabled: false)]
+            return
+        }
+        alarms = decoded
+    }
+
+    private func saveAlarms() {
+        if let data = try? JSONEncoder().encode(alarms) {
+            UserDefaults.standard.set(data, forKey: "alarmsData")
+        }
+    }
+}
+
 // MARK: - SettingsView
 
 struct SettingsView: View {
@@ -1687,7 +1924,7 @@ struct ContentView: View {
                 let h = drag.translation.width
                 let v = drag.translation.height
                 guard Swift.abs(h) > Swift.abs(v) * 1.3 else { return }
-                if h < -60     { navigate(to: Swift.min(3, page + 1)) }
+                if h < -60     { navigate(to: Swift.min(4, page + 1)) }
                 else if h > 60 { navigate(to: Swift.max(-1, page - 1)) }
             }
     }
@@ -1701,22 +1938,26 @@ struct ContentView: View {
                     .opacity(page == -1 ? 1 : 0)
                     .scaleEffect(page == -1 ? 1 : 0.95)
                     .allowsHitTesting(page == -1)
-                CountdownView(timer: countdownTimer)
+                ClockView()
                     .opacity(page == 0 ? 1 : 0)
                     .scaleEffect(page == 0 ? 1 : 0.95)
                     .allowsHitTesting(page == 0)
-                StopwatchView()
+                CountdownView(timer: countdownTimer)
                     .opacity(page == 1 ? 1 : 0)
                     .scaleEffect(page == 1 ? 1 : 0.95)
                     .allowsHitTesting(page == 1)
-                IntervalView()
+                StopwatchView()
                     .opacity(page == 2 ? 1 : 0)
                     .scaleEffect(page == 2 ? 1 : 0.95)
                     .allowsHitTesting(page == 2)
-                PomodoroView()
+                IntervalView()
                     .opacity(page == 3 ? 1 : 0)
                     .scaleEffect(page == 3 ? 1 : 0.95)
                     .allowsHitTesting(page == 3)
+                PomodoroView()
+                    .opacity(page == 4 ? 1 : 0)
+                    .scaleEffect(page == 4 ? 1 : 0.95)
+                    .allowsHitTesting(page == 4)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .ignoresSafeArea()

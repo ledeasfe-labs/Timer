@@ -1,10 +1,18 @@
 # Timer
 
-A minimal, dark, tactile timer app for iPhone. Four modes in one place — Countdown, Stopwatch, Interval, and Pomodoro — with no clutter, no subscriptions, and no account required.
+A minimal, dark, tactile timer app for iPhone. Five modes in one place — Clock, Countdown, Stopwatch, Interval, and Pomodoro — with no clutter, no subscriptions, and no account required.
 
 ---
 
 ## Features
+
+**Clock**
+- Live HH:MM:SS display, gyro-levelled
+- Up to 5 alarms in a horizontal scrollable row
+- Drag hour or minute digits up/down to set each alarm
+- Toggle alarms on/off individually
+- Tap + to add an alarm with a mitosis-style spring animation
+- Hold an alarm card to delete it — glows red as confirmation, then flies off
 
 **Countdown**
 - Drag up/down to set time — slow drag for seconds, fast drag for minutes
