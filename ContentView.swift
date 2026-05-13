@@ -1530,7 +1530,6 @@ struct WorldClockRow: View {
             Text(utcOffsetString)
                 .font(.system(size: 9, weight: .light))
                 .foregroundColor(Theme.dim.opacity(0.6))
-            Spacer()
             Text(timeString)
                 .font(.system(size: 15, weight: .thin, design: .rounded))
                 .foregroundColor(Theme.text)
