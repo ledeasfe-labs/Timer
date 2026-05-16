@@ -378,9 +378,10 @@ struct ScreenBorderRing: View {
                     .trim(from: 0, to: p)
                     .stroke(color, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
             }
+            .drawingGroup()
             .frame(width: w, height: h)
             .position(x: geo.size.width / 2, y: geo.size.height / 2)
-            .animation(.linear(duration: 1.0 / 30.0), value: p)
+            .animation(.linear(duration: 1.0 / 60.0), value: p)
             .onChange(of: pulsing) { _, isPulsing in
                 if isPulsing {
                     withAnimation(.easeInOut(duration: 0.65).repeatForever(autoreverses: true)) { glow = true }
@@ -587,7 +588,7 @@ struct ModeSwitcher: View {
         HapticManager.shared.reset(); SoundManager.shared.stopLoop()
     }
     private func startTicking() {
-        cancellable = Timer.publish(every: 1.0/30.0, tolerance: 0.004, on: .main, in: .common)
+        cancellable = Timer.publish(every: 1.0/60.0, tolerance: 0.002, on: .main, in: .common)
             .autoconnect().sink { [weak self] _ in self?.tick() }
     }
     private func tick() {
@@ -880,7 +881,7 @@ struct StopwatchView: View {
         phase = next
         let dur = next == .work ? workSecs : restSecs
         endTime = Date().addingTimeInterval(dur); remaining = dur
-        cancellable = Timer.publish(every: 1.0/30.0, tolerance: 0.004, on: .main, in: .common)
+        cancellable = Timer.publish(every: 1.0/60.0, tolerance: 0.002, on: .main, in: .common)
             .autoconnect().sink { [weak self] _ in self?.tick() }
     }
     private func tick() {
@@ -1117,7 +1118,7 @@ struct IntervalView: View {
         endTime = Date().addingTimeInterval(dur); remaining = dur; startTicking()
     }
     private func startTicking() {
-        cancellable = Timer.publish(every: 1.0/30.0, tolerance: 0.004, on: .main, in: .common)
+        cancellable = Timer.publish(every: 1.0/60.0, tolerance: 0.002, on: .main, in: .common)
             .autoconnect().sink { [weak self] _ in self?.tick() }
     }
     private func tick() {
@@ -1218,26 +1219,49 @@ struct PomodoroView: View {
         .animation(.easeInOut(duration: 0.2),  value: timer.isPaused)
     }
 
-    private var setupContent: some View {
+    private var settingsGroup: some View {
         VStack(spacing: 0) {
-            Spacer()
-            focusDragPreview.padding(.bottom, 32)
-            VStack(spacing: 0) {
-                DragRow(label: "FOCUS",       value: $timer.focusMinutes,      range: 1...99, unit: "min")
-                DragRow(label: "SHORT BREAK", value: $timer.shortBreakMinutes, range: 1...30, unit: "min")
-                DragRow(label: "LONG BREAK",  value: $timer.longBreakMinutes,  range: 1...60, unit: "min")
-                DragRow(label: "SESSIONS",    value: $timer.sessionsPerLong,   range: 1...12, unit: "")
+            DragRow(label: "FOCUS",       value: $timer.focusMinutes,      range: 1...99, unit: "min")
+            DragRow(label: "SHORT BREAK", value: $timer.shortBreakMinutes, range: 1...30, unit: "min")
+            DragRow(label: "LONG BREAK",  value: $timer.longBreakMinutes,  range: 1...60, unit: "min")
+            DragRow(label: "SESSIONS",    value: $timer.sessionsPerLong,   range: 1...12, unit: "")
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.white.opacity(0.045))
+                .overlay(RoundedRectangle(cornerRadius: 20)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 0.6))
+        )
+    }
+
+    private var setupContent: some View {
+        GeometryReader { geo in
+            let landscape = geo.size.width > geo.size.height
+            if landscape {
+                HStack(alignment: .center, spacing: 0) {
+                    focusDragPreview
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack(spacing: 16) {
+                        settingsGroup.padding(.horizontal, 12)
+                        GlassCapsuleButton(label: "FOCUS", action: timer.start)
+                    }
+                    .frame(maxWidth: geo.size.width * 0.5)
+                    .padding(.vertical, 12)
+                }
+                .padding(.top, 56)
+                .padding(.bottom, 16)
+                .frame(width: geo.size.width, height: geo.size.height)
+            } else {
+                VStack(spacing: 0) {
+                    Spacer()
+                    focusDragPreview.padding(.bottom, 32)
+                    settingsGroup.padding(.horizontal, 24)
+                    Spacer().frame(height: 28)
+                    GlassCapsuleButton(label: "FOCUS", action: timer.start)
+                    Spacer()
+                }
+                .frame(width: geo.size.width, height: geo.size.height)
             }
-            .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color.white.opacity(0.045))
-                    .overlay(RoundedRectangle(cornerRadius: 20)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 0.6))
-            )
-            .padding(.horizontal, 24)
-            Spacer().frame(height: 28)
-            GlassCapsuleButton(label: "FOCUS", action: timer.start)
-            Spacer()
         }
     }
 
@@ -1733,23 +1757,27 @@ struct ClockView: View {
     }
 
     private var mainContent: some View {
-        ZStack(alignment: .bottom) {
-            Text(timeString)
-                .font(Theme.display(86))
-                .foregroundColor(Theme.text)
-                .monospacedDigit()
-                .gyroLeveled()
-                .frame(minHeight: 110)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            VStack(spacing: 8) {
-                worldClockArea
-                alarmArea
+        GeometryReader { geo in
+            let landscape = geo.size.width > geo.size.height
+            ZStack(alignment: .bottom) {
+                Text(timeString)
+                    .font(Theme.display(landscape ? 52 : 86))
+                    .foregroundColor(Theme.text)
+                    .monospacedDigit()
+                    .gyroLeveled()
+                    .frame(minHeight: landscape ? 60 : 110)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 6) {
+                    worldClockArea(width: geo.size.width)
+                    alarmArea(width: geo.size.width)
+                }
+                .padding(.bottom, landscape ? 14 : 80)
             }
-            .padding(.bottom, 80)
+            .frame(width: geo.size.width, height: geo.size.height)
         }
     }
 
-    private var alarmArea: some View {
+    private func alarmArea(width: CGFloat) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 ForEach(alarms) { alarm in
@@ -1806,12 +1834,12 @@ struct ClockView: View {
                 }
             }
             .padding(.horizontal, 24)
-            .frame(minWidth: UIScreen.main.bounds.width, alignment: .center)
+            .frame(minWidth: width, alignment: .center)
         }
         .scrollDismissesKeyboard(.immediately)
     }
 
-    private var worldClockArea: some View {
+    private func worldClockArea(width: CGFloat) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 ForEach(worldClocks) { wc in
@@ -1869,7 +1897,7 @@ struct ClockView: View {
                 }
             }
             .padding(.horizontal, 24)
-            .frame(minWidth: UIScreen.main.bounds.width, alignment: .center)
+            .frame(minWidth: width, alignment: .center)
         }
         .scrollDismissesKeyboard(.immediately)
     }
