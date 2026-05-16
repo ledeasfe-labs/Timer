@@ -378,7 +378,6 @@ struct ScreenBorderRing: View {
                     .trim(from: 0, to: p)
                     .stroke(color, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
             }
-            .drawingGroup()
             .frame(width: w, height: h)
             .position(x: geo.size.width / 2, y: geo.size.height / 2)
             .animation(.linear(duration: 1.0 / 60.0), value: p)
@@ -1205,6 +1204,7 @@ struct PomodoroView: View {
     @StateObject private var timer = PomodoroTimer()
     @AppStorage("accentHex") private var accentHex = "FF9500"
     private var accent: Color { Color(hex: accentHex) }
+    @Environment(\.horizontalSizeClass) private var hSizeClass
 
     var body: some View {
         ZStack {
@@ -1237,7 +1237,8 @@ struct PomodoroView: View {
     private var setupContent: some View {
         GeometryReader { geo in
             let landscape = geo.size.width > geo.size.height
-            if landscape {
+            let useCompact = landscape && hSizeClass == .compact
+            if useCompact {
                 HStack(alignment: .center, spacing: 0) {
                     focusDragPreview
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1725,6 +1726,7 @@ struct ClockView: View {
     @State private var firedAlarmID: UUID? = nil
     @State private var expandedAlarmID: UUID? = nil
     @State private var expandedClockID: UUID? = nil
+    @Environment(\.horizontalSizeClass) private var hSizeClass
 
     @AppStorage("accentHex") private var accentHex = "FF9500"
     private var accent: Color { Color(hex: accentHex) }
@@ -1759,19 +1761,20 @@ struct ClockView: View {
     private var mainContent: some View {
         GeometryReader { geo in
             let landscape = geo.size.width > geo.size.height
+            let phoneLS = landscape && hSizeClass == .compact
             ZStack(alignment: .bottom) {
                 Text(timeString)
-                    .font(Theme.display(landscape ? 52 : 86))
+                    .font(Theme.display(phoneLS ? 52 : 86))
                     .foregroundColor(Theme.text)
                     .monospacedDigit()
                     .gyroLeveled()
-                    .frame(minHeight: landscape ? 60 : 110)
+                    .frame(minHeight: phoneLS ? 60 : 110)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 VStack(spacing: 6) {
                     worldClockArea(width: geo.size.width)
                     alarmArea(width: geo.size.width)
                 }
-                .padding(.bottom, landscape ? 14 : 80)
+                .padding(.bottom, phoneLS ? 14 : 80)
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
