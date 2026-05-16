@@ -983,6 +983,7 @@ struct IntervalView: View {
     @AppStorage("accentHex") private var accentHex = "FF9500"
     private var accent: Color { Color(hex: accentHex) }
     private var restColor: Color { Color(hex: "5AC8FA") }
+    @Environment(\.horizontalSizeClass) private var hSizeClass
 
     var body: some View {
         ZStack {
@@ -1000,28 +1001,34 @@ struct IntervalView: View {
     }
 
     private var setupContent: some View {
-        VStack(spacing: 22) {
-            Spacer()
-            HStack(spacing: 12) {
-                DragSetCard(label: "WORK", color: accent, totalSeconds: $timer.workSecs, maxSeconds: 3599)
-                DragSetCard(label: "REST", color: restColor, totalSeconds: $timer.restSecs, maxSeconds: 3599)
-            }.padding(.horizontal, 24)
+        GeometryReader { geo in
+            let phoneLS = geo.size.width > geo.size.height && hSizeClass == .compact
+            VStack(spacing: phoneLS ? 12 : 22) {
+                if !phoneLS { Spacer() }
+                HStack(spacing: 12) {
+                    DragSetCard(label: "WORK", color: accent, totalSeconds: $timer.workSecs, maxSeconds: 3599)
+                    DragSetCard(label: "REST", color: restColor, totalSeconds: $timer.restSecs, maxSeconds: 3599)
+                }.padding(.horizontal, 24)
 
-            HStack(spacing: 28) {
-                GlassButton(icon: "minus", size: 40, iconColor: Theme.dim) {
-                    if timer.totalRounds > 1 { timer.totalRounds -= 1; HapticManager.shared.tick() }
-                }
-                VStack(spacing: 2) {
-                    Text("\(timer.totalRounds)").font(Theme.display(40)).foregroundColor(Theme.text)
-                    Text("ROUNDS").font(Theme.label).foregroundColor(Theme.dim).tracking(2)
-                }.frame(minWidth: 72)
-                GlassButton(icon: "plus", size: 40, iconColor: Theme.dim) {
-                    if timer.totalRounds < 99 { timer.totalRounds += 1; HapticManager.shared.tick() }
-                }
-            }.padding(.vertical, 4)
+                HStack(spacing: 28) {
+                    GlassButton(icon: "minus", size: 40, iconColor: Theme.dim) {
+                        if timer.totalRounds > 1 { timer.totalRounds -= 1; HapticManager.shared.tick() }
+                    }
+                    VStack(spacing: 2) {
+                        Text("\(timer.totalRounds)").font(Theme.display(40)).foregroundColor(Theme.text)
+                        Text("ROUNDS").font(Theme.label).foregroundColor(Theme.dim).tracking(2)
+                    }.frame(minWidth: 72)
+                    GlassButton(icon: "plus", size: 40, iconColor: Theme.dim) {
+                        if timer.totalRounds < 99 { timer.totalRounds += 1; HapticManager.shared.tick() }
+                    }
+                }.padding(.vertical, phoneLS ? 0 : 4)
 
-            GlassCapsuleButton(label: "BEGIN", action: timer.start)
-            Spacer()
+                GlassCapsuleButton(label: "BEGIN", action: timer.start)
+                if !phoneLS { Spacer() }
+            }
+            .padding(.top, phoneLS ? 60 : 0)
+            .padding(.bottom, phoneLS ? 12 : 0)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -1774,7 +1781,7 @@ struct ClockView: View {
                     worldClockArea(width: geo.size.width)
                     alarmArea(width: geo.size.width)
                 }
-                .padding(.bottom, phoneLS ? 14 : 80)
+                .padding(.bottom, phoneLS ? 50 : 80)
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
