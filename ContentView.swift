@@ -3,6 +3,7 @@ import UIKit
 import Combine
 import AVFoundation
 import CoreMotion
+import UserNotifications
 
 // MARK: - Color Extension
 
@@ -283,6 +284,60 @@ struct GyroLevelModifier: ViewModifier {
 
 extension View {
     func gyroLeveled() -> some View { modifier(GyroLevelModifier()) }
+}
+
+// MARK: - NotificationManager
+
+extension Notification.Name {
+    static let alarmFired = Notification.Name("timerAlarmFired")
+}
+
+final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = NotificationManager()
+
+    private override init() {
+        super.init()
+        UNUserNotificationCenter.current().delegate = self
+    }
+
+    func requestPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    }
+
+    func schedule(_ alarms: [Alarm]) {
+        let center = UNUserNotificationCenter.current()
+        center.removeAllPendingNotificationRequests()
+        for alarm in alarms where alarm.enabled {
+            let content = UNMutableNotificationContent()
+            content.title = alarm.label.isEmpty ? "Alarm" : alarm.label
+            content.body  = String(format: "%02d:%02d", alarm.hour, alarm.minute)
+            content.sound = .default
+            var comps = DateComponents()
+            comps.hour = alarm.hour; comps.minute = alarm.minute; comps.second = 0
+            let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
+            let request = UNNotificationRequest(identifier: alarm.id.uuidString, content: content, trigger: trigger)
+            center.add(request, withCompletionHandler: nil)
+        }
+    }
+
+    // Show banner + play sound even when app is in foreground
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound])
+    }
+
+    // When user taps the notification to open the app, surface the fired-alarm UI
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        if let id = UUID(uuidString: response.notification.request.identifier) {
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .alarmFired, object: nil, userInfo: ["id": id])
+            }
+        }
+        completionHandler()
+    }
 }
 
 // MARK: - UnifiedDragView
@@ -1716,6 +1771,12 @@ struct ClockView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { loadAlarms(); loadWorldClocks() }
+        .onReceive(NotificationCenter.default.publisher(for: .alarmFired)) { note in
+            guard firedAlarmID == nil, let id = note.userInfo?["id"] as? UUID else { return }
+            firedAlarmID = id
+            HapticManager.shared.complete()
+            SoundManager.shared.startLoop()
+        }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { date in
             now = date
             guard firedAlarmID == nil else { return }
@@ -1904,6 +1965,7 @@ struct ClockView: View {
         if let data = try? JSONEncoder().encode(alarms) {
             UserDefaults.standard.set(data, forKey: "alarmsData")
         }
+        NotificationManager.shared.schedule(alarms)
     }
 
     private func loadWorldClocks() {
@@ -2472,6 +2534,7 @@ struct ContentView: View {
             }
         }
         .onAppear {
+            NotificationManager.shared.requestPermission()
             if !hasSeenTutorial {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                     withAnimation(.easeIn(duration: 0.3)) { showTutorial = true }
