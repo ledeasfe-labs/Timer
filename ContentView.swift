@@ -4,6 +4,7 @@ import Combine
 import AVFoundation
 import CoreMotion
 import UserNotifications
+import ActivityKit
 
 // MARK: - Color Extension
 
@@ -604,6 +605,19 @@ struct ModeSwitcher: View {
     }
 }
 
+// MARK: - Live Activity Attributes
+
+struct TimerActivityAttributes: ActivityAttributes {
+    var accentHex: String
+    var totalDuration: TimeInterval
+
+    struct ContentState: Codable, Hashable {
+        var endDate: Date
+        var isPaused: Bool
+        var pausedRemaining: TimeInterval
+    }
+}
+
 // MARK: - CountdownTimer
 
 @MainActor final class CountdownTimer: ObservableObject {
@@ -614,6 +628,11 @@ struct ModeSwitcher: View {
     private var endTime: Date?
     private var setDuration: TimeInterval = 0
     private var cancellable: AnyCancellable?
+    private var liveActivity: Activity<TimerActivityAttributes>?
+
+    private var accentHex: String {
+        UserDefaults.standard.string(forKey: "accentHex") ?? "FF9500"
+    }
 
     var progress: Double {
         guard setDuration > 0 else { return 0 }
@@ -626,20 +645,24 @@ struct ModeSwitcher: View {
         setDuration = d; remaining = d
         endTime = Date().addingTimeInterval(d)
         state = .running; startTicking(); HapticManager.shared.start()
+        startLiveActivity(endDate: endTime!)
     }
     func togglePause() {
         switch state {
         case .running:
             cancellable?.cancel(); endTime = nil; state = .paused; HapticManager.shared.stop()
+            updateLiveActivity(isPaused: true)
         case .paused:
             endTime = Date().addingTimeInterval(remaining)
             state = .running; startTicking(); HapticManager.shared.start()
+            updateLiveActivity(isPaused: false)
         default: break
         }
     }
     func reset() {
         cancellable?.cancel(); endTime = nil; remaining = 0; state = .idle
         HapticManager.shared.reset(); SoundManager.shared.stopLoop()
+        endLiveActivity()
     }
     private func startTicking() {
         cancellable = Timer.publish(every: 1.0/30.0, tolerance: 0.004, on: .main, in: .common)
@@ -651,10 +674,35 @@ struct ModeSwitcher: View {
         if left <= 0 {
             remaining = 0; cancellable?.cancel(); state = .complete
             HapticManager.shared.complete(); SoundManager.shared.startLoop()
+            endLiveActivity()
         } else {
             if remaining > 10 && left <= 10 { HapticManager.shared.warning(); SoundManager.shared.warning() }
             remaining = left
         }
+    }
+
+    private func startLiveActivity(endDate: Date) {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        let attrs = TimerActivityAttributes(accentHex: accentHex, totalDuration: setDuration)
+        let state = TimerActivityAttributes.ContentState(
+            endDate: endDate, isPaused: false, pausedRemaining: setDuration
+        )
+        let content = ActivityContent(state: state, staleDate: endDate.addingTimeInterval(5))
+        do { liveActivity = try Activity.request(attributes: attrs, content: content) } catch {}
+    }
+
+    private func updateLiveActivity(isPaused: Bool) {
+        let endDate = endTime ?? Date().addingTimeInterval(remaining)
+        let state = TimerActivityAttributes.ContentState(
+            endDate: endDate, isPaused: isPaused, pausedRemaining: remaining
+        )
+        let content = ActivityContent(state: state, staleDate: isPaused ? nil : endDate.addingTimeInterval(5))
+        Task { await liveActivity?.update(content) }
+    }
+
+    private func endLiveActivity() {
+        let activity = liveActivity; liveActivity = nil
+        Task { await activity?.end(nil, dismissalPolicy: .immediate) }
     }
 }
 
