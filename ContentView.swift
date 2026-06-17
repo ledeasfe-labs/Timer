@@ -2223,6 +2223,153 @@ struct SettingsView: View {
     }
 }
 
+// MARK: - Tutorial
+
+private struct TutorialSlide {
+    let icon: String
+    let title: String
+    let body: String
+    let hint: String?
+}
+
+struct TutorialView: View {
+    let onDismiss: () -> Void
+
+    @AppStorage("accentHex") private var accentHex = "FF9500"
+    private var accent: Color { Color(hex: accentHex) }
+
+    @State private var currentSlide = 0
+
+    private let slides: [TutorialSlide] = [
+        TutorialSlide(
+            icon: "timer",
+            title: "Welcome to Timer",
+            body: "Five focused modes — clock, countdown, stopwatch, interval, and Pomodoro — all in one place.",
+            hint: "Swipe left or right to switch modes"
+        ),
+        TutorialSlide(
+            icon: "arrow.up.arrow.down",
+            title: "Drag to Set Time",
+            body: "In Countdown mode, drag up or down on the screen to set your time. Drag faster for bigger steps — two fingers jumps by 30 minutes.",
+            hint: nil
+        ),
+        TutorialSlide(
+            icon: "alarm",
+            title: "Alarms & World Clocks",
+            body: "On the Clock screen, tap + to add an alarm. Drag the hour or minute digits up and down to set the time. Long-press to delete.",
+            hint: nil
+        ),
+        TutorialSlide(
+            icon: "gearshape",
+            title: "Make It Yours",
+            body: "Swipe all the way left to reach Settings. Pick your accent color, background, sounds, and haptics.",
+            hint: nil
+        ),
+    ]
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.65).ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                HStack {
+                    Spacer()
+                    Button("SKIP") { onDismiss() }
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(2)
+                        .foregroundColor(Color.white.opacity(0.40))
+                }
+                .padding(.horizontal, 28)
+                .padding(.top, 56)
+
+                Spacer()
+
+                VStack(spacing: 20) {
+                    Image(systemName: slides[currentSlide].icon)
+                        .font(.system(size: 50, weight: .ultraLight))
+                        .foregroundColor(accent)
+                        .shadow(color: accent.opacity(0.55), radius: 14)
+
+                    Text(slides[currentSlide].title)
+                        .font(.system(size: 22, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white)
+
+                    Text(slides[currentSlide].body)
+                        .font(.system(size: 15, weight: .light, design: .rounded))
+                        .foregroundColor(Color.white.opacity(0.72))
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(5)
+
+                    if let hint = slides[currentSlide].hint {
+                        Text(hint)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .tracking(0.3)
+                            .foregroundColor(accent.opacity(0.85))
+                    }
+                }
+                .padding(.horizontal, 36)
+                .padding(.vertical, 44)
+                .background(
+                    RoundedRectangle(cornerRadius: 28)
+                        .fill(.ultraThinMaterial)
+                        .overlay(RoundedRectangle(cornerRadius: 28).fill(LinearGradient(
+                            colors: [Color.white.opacity(0.11), Color.clear],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        )))
+                        .overlay(RoundedRectangle(cornerRadius: 28)
+                            .stroke(Color.white.opacity(0.13), lineWidth: 1))
+                )
+                .padding(.horizontal, 24)
+                .id(currentSlide)
+                .transition(.asymmetric(
+                    insertion: .move(edge: .trailing).combined(with: .opacity),
+                    removal: .move(edge: .leading).combined(with: .opacity)
+                ))
+
+                Spacer()
+
+                VStack(spacing: 22) {
+                    HStack(spacing: 6) {
+                        ForEach(0..<slides.count, id: \.self) { i in
+                            Capsule()
+                                .fill(i == currentSlide ? accent : Color.white.opacity(0.22))
+                                .frame(width: i == currentSlide ? 18 : 6, height: 6)
+                                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: currentSlide)
+                        }
+                    }
+
+                    let isLast = currentSlide == slides.count - 1
+                    Button(isLast ? "GET STARTED" : "NEXT") {
+                        if isLast {
+                            onDismiss()
+                        } else {
+                            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                                currentSlide += 1
+                            }
+                        }
+                    }
+                    .font(.system(size: 12, weight: .bold))
+                    .tracking(3)
+                    .foregroundColor(Color.black.opacity(0.82))
+                    .frame(width: 160, height: 50)
+                    .background(
+                        Capsule().fill(accent)
+                            .overlay(Capsule().fill(LinearGradient(
+                                colors: [Color.white.opacity(0.42), Color.clear],
+                                startPoint: .topLeading,
+                                endPoint: UnitPoint(x: 0.55, y: 0.65)
+                            )))
+                            .overlay(Capsule().stroke(Color.white.opacity(0.28), lineWidth: 0.9))
+                    )
+                    .buttonStyle(.plain)
+                    .shadow(color: accent.opacity(0.45), radius: 14, y: 4)
+                }
+                .padding(.bottom, 52)
+            }
+        }
+    }
+}
+
 // MARK: - ContentView
 
 struct ContentView: View {
@@ -2230,6 +2377,8 @@ struct ContentView: View {
     @State private var page = 0
     @State private var pillExpanded = false
     @State private var pillCollapseID = UUID()
+    @AppStorage("hasSeenTutorial") private var hasSeenTutorial = false
+    @State private var showTutorial = false
 
     @AppStorage("bgMode") private var bgMode = "dark"
     private var bg: Color { AppSettings.bg(for: bgMode) }
@@ -2263,54 +2412,71 @@ struct ContentView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            bg.ignoresSafeArea()
+        ZStack {
+            ZStack(alignment: .top) {
+                bg.ignoresSafeArea()
 
-            ZStack {
-                SettingsView()
-                    .opacity(page == -1 ? 1 : 0)
-                    .scaleEffect(page == -1 ? 1 : 0.95)
-                    .allowsHitTesting(page == -1)
-                ClockView()
-                    .opacity(page == 0 ? 1 : 0)
-                    .scaleEffect(page == 0 ? 1 : 0.95)
-                    .allowsHitTesting(page == 0)
-                CountdownView(timer: countdownTimer)
-                    .opacity(page == 1 ? 1 : 0)
-                    .scaleEffect(page == 1 ? 1 : 0.95)
-                    .allowsHitTesting(page == 1)
-                StopwatchView()
-                    .opacity(page == 2 ? 1 : 0)
-                    .scaleEffect(page == 2 ? 1 : 0.95)
-                    .allowsHitTesting(page == 2)
-                IntervalView()
-                    .opacity(page == 3 ? 1 : 0)
-                    .scaleEffect(page == 3 ? 1 : 0.95)
-                    .allowsHitTesting(page == 3)
-                PomodoroView()
-                    .opacity(page == 4 ? 1 : 0)
-                    .scaleEffect(page == 4 ? 1 : 0.95)
-                    .allowsHitTesting(page == 4)
+                ZStack {
+                    SettingsView()
+                        .opacity(page == -1 ? 1 : 0)
+                        .scaleEffect(page == -1 ? 1 : 0.95)
+                        .allowsHitTesting(page == -1)
+                    ClockView()
+                        .opacity(page == 0 ? 1 : 0)
+                        .scaleEffect(page == 0 ? 1 : 0.95)
+                        .allowsHitTesting(page == 0)
+                    CountdownView(timer: countdownTimer)
+                        .opacity(page == 1 ? 1 : 0)
+                        .scaleEffect(page == 1 ? 1 : 0.95)
+                        .allowsHitTesting(page == 1)
+                    StopwatchView()
+                        .opacity(page == 2 ? 1 : 0)
+                        .scaleEffect(page == 2 ? 1 : 0.95)
+                        .allowsHitTesting(page == 2)
+                    IntervalView()
+                        .opacity(page == 3 ? 1 : 0)
+                        .scaleEffect(page == 3 ? 1 : 0.95)
+                        .allowsHitTesting(page == 3)
+                    PomodoroView()
+                        .opacity(page == 4 ? 1 : 0)
+                        .scaleEffect(page == 4 ? 1 : 0.95)
+                        .allowsHitTesting(page == 4)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea()
+
+                ModeSwitcher(
+                    page: $page,
+                    expanded: pillExpanded,
+                    onNavigate: navigate,
+                    onExpand: { expandPill(for: 1.2) }
+                )
+                .padding(.top, 8)
+
+                Text("By ledeasfe-labs / @ledeasfe")
+                    .font(.system(size: 11, weight: .light, design: .rounded))
+                    .foregroundColor(Color.white.opacity(0.09))
+                    .tracking(0.4)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 22)
+                    .allowsHitTesting(false)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .ignoresSafeArea()
+            .gesture(swipeGesture)
 
-            ModeSwitcher(
-                page: $page,
-                expanded: pillExpanded,
-                onNavigate: navigate,
-                onExpand: { expandPill(for: 1.2) }
-            )
-            .padding(.top, 8)
-
-            Text("By ledeasfe-labs / @ledeasfe")
-                .font(.system(size: 11, weight: .light, design: .rounded))
-                .foregroundColor(Color.white.opacity(0.09))
-                .tracking(0.4)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                .padding(.bottom, 22)
-                .allowsHitTesting(false)
+            if showTutorial {
+                TutorialView {
+                    withAnimation(.easeOut(duration: 0.3)) { showTutorial = false }
+                    hasSeenTutorial = true
+                }
+                .transition(.opacity)
+            }
         }
-        .gesture(swipeGesture)
+        .onAppear {
+            if !hasSeenTutorial {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    withAnimation(.easeIn(duration: 0.3)) { showTutorial = true }
+                }
+            }
+        }
     }
 }
