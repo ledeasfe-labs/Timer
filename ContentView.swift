@@ -287,6 +287,20 @@ extension View {
     func gyroLeveled() -> some View { modifier(GyroLevelModifier()) }
 }
 
+// MARK: - ScreenLock
+
+private enum ScreenLock {
+    private static var count = 0
+    static func acquire() {
+        count += 1
+        UIApplication.shared.isIdleTimerDisabled = true
+    }
+    static func release() {
+        count = max(0, count - 1)
+        if count == 0 { UIApplication.shared.isIdleTimerDisabled = false }
+    }
+}
+
 // MARK: - NotificationManager
 
 extension Notification.Name {
@@ -296,43 +310,209 @@ extension Notification.Name {
 final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationManager()
 
+    // Persisted IDs of currently scheduled alarm notifications so we can
+    // cancel exactly those when rescheduling (without touching timer notifs).
+    private var scheduledAlarmIDs: [String] {
+        get { UserDefaults.standard.stringArray(forKey: "_alarmNotifIDs") ?? [] }
+        set { UserDefaults.standard.set(newValue, forKey: "_alarmNotifIDs") }
+    }
+
     private override init() {
         super.init()
         UNUserNotificationCenter.current().delegate = self
+        let snooze = UNNotificationAction(identifier: "SNOOZE", title: "Snooze 9 min", options: [])
+        let cat = UNNotificationCategory(identifier: "ALARM", actions: [snooze],
+                                         intentIdentifiers: [], options: [])
+        UNUserNotificationCenter.current().setNotificationCategories([cat])
     }
 
     func requestPermission() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
+    // MARK: Alarm scheduling
+
     func schedule(_ alarms: [Alarm]) {
         let center = UNUserNotificationCenter.current()
-        center.removeAllPendingNotificationRequests()
+        center.removePendingNotificationRequests(withIdentifiers: scheduledAlarmIDs)
+        var newIDs: [String] = []
         for alarm in alarms where alarm.enabled {
+            let days = alarm.repeatDays.isEmpty ? [Int]() : alarm.repeatDays
             let content = UNMutableNotificationContent()
             content.title = alarm.label.isEmpty ? "Alarm" : alarm.label
             content.body  = String(format: "%02d:%02d", alarm.hour, alarm.minute)
             content.sound = .default
-            var comps = DateComponents()
-            comps.hour = alarm.hour; comps.minute = alarm.minute; comps.second = 0
-            let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
-            let request = UNNotificationRequest(identifier: alarm.id.uuidString, content: content, trigger: trigger)
-            center.add(request, withCompletionHandler: nil)
+            content.categoryIdentifier = "ALARM"
+            content.userInfo = ["alarmID": alarm.id.uuidString]
+            if days.isEmpty {
+                var comps = DateComponents()
+                comps.hour = alarm.hour; comps.minute = alarm.minute; comps.second = 0
+                let id = "alarm.\(alarm.id)"
+                center.add(UNNotificationRequest(identifier: id,
+                    content: content,
+                    trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)))
+                newIDs.append(id)
+            } else {
+                for day in days {
+                    var comps = DateComponents()
+                    comps.weekday = day
+                    comps.hour = alarm.hour; comps.minute = alarm.minute; comps.second = 0
+                    let id = "alarm.\(alarm.id)-d\(day)"
+                    center.add(UNNotificationRequest(identifier: id,
+                        content: content,
+                        trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)))
+                    newIDs.append(id)
+                }
+            }
+        }
+        scheduledAlarmIDs = newIDs
+    }
+
+    func scheduleSnooze(alarmID: UUID, label: String, minutes: Int = 9) {
+        let content = UNMutableNotificationContent()
+        content.title = label.isEmpty ? "Alarm" : label
+        content.body  = "Snoozed"
+        content.sound = .default
+        content.categoryIdentifier = "ALARM"
+        content.userInfo = ["alarmID": alarmID.uuidString]
+        let id = "snooze.\(alarmID)-\(Int(Date().timeIntervalSince1970))"
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(minutes * 60), repeats: false)
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+    }
+
+    // MARK: Timer notification scheduling
+
+    func scheduleCountdownComplete(at date: Date) {
+        cancelCountdownNotifications()
+        guard date.timeIntervalSinceNow > 0 else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Timer Done"; content.body = "Your countdown has finished"
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: date.timeIntervalSinceNow, repeats: false)
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: "countdown.complete", content: content, trigger: trigger))
+    }
+
+    func cancelCountdownNotifications() {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["countdown.complete"])
+    }
+
+    func scheduleIntervalNotifications(currentPhaseEndTime: Date, isWork: Bool,
+                                       currentRound: Int, workSecs: Double,
+                                       restSecs: Double, totalRounds: Int) {
+        cancelIntervalNotifications()
+        var t = currentPhaseEndTime.timeIntervalSinceNow
+        var round = currentRound
+        var inWork = isWork
+        var idx = 0
+        while t > 0 && idx < 32 {
+            let c = UNMutableNotificationContent(); c.sound = .default
+            if inWork {
+                if restSecs > 0 {
+                    c.title = "Rest Time"; c.body = "Round \(round) done — time to rest"
+                    addTimerNotif(id: "interval.\(idx)", in: t, content: c)
+                    idx += 1; t += restSecs; inWork = false
+                } else {
+                    if round >= totalRounds {
+                        c.title = "Interval Complete"; c.body = "All \(totalRounds) rounds done!"
+                        addTimerNotif(id: "interval.\(idx)", in: t, content: c); break
+                    } else {
+                        c.title = "Work Time"; c.body = "Round \(round + 1) starting"
+                        addTimerNotif(id: "interval.\(idx)", in: t, content: c)
+                        idx += 1; round += 1; t += workSecs
+                    }
+                }
+            } else {
+                if round >= totalRounds {
+                    c.title = "Interval Complete"; c.body = "All \(totalRounds) rounds done!"
+                    addTimerNotif(id: "interval.\(idx)", in: t, content: c); break
+                } else {
+                    c.title = "Work Time"; c.body = "Round \(round + 1) starting"
+                    addTimerNotif(id: "interval.\(idx)", in: t, content: c)
+                    idx += 1; round += 1; t += workSecs; inWork = true
+                }
+            }
         }
     }
 
-    // Show banner + play sound even when app is in foreground
+    func cancelIntervalNotifications() {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(
+            withIdentifiers: (0..<32).map { "interval.\($0)" })
+    }
+
+    func schedulePomodoroNotifications(currentPhaseEndTime: Date,
+                                       currentPhase: PomodoroTimer.PPhase,
+                                       completedSessions: Int,
+                                       focusMin: Int, shortBreakMin: Int,
+                                       longBreakMin: Int, sessionsPerLong: Int) {
+        cancelPomodoroNotifications()
+        let focusSecs = TimeInterval(focusMin * 60)
+        let shortSecs = TimeInterval(shortBreakMin * 60)
+        let longSecs  = TimeInterval(longBreakMin * 60)
+        var t = currentPhaseEndTime.timeIntervalSinceNow
+        var phase = currentPhase
+        var sessions = completedSessions
+        var idx = 0
+        while t > 0 && idx < 24 {
+            let c = UNMutableNotificationContent(); c.sound = .default
+            let nextPhase: PomodoroTimer.PPhase
+            let nextDur: TimeInterval
+            switch phase {
+            case .focus:
+                sessions += 1
+                if sessions % sessionsPerLong == 0 {
+                    c.title = "Long Break"; c.body = "Focus done — enjoy your break"
+                    nextPhase = .longBreak; nextDur = longSecs
+                } else {
+                    c.title = "Short Break"; c.body = "Focus done — take a short break"
+                    nextPhase = .shortBreak; nextDur = shortSecs
+                }
+            case .shortBreak:
+                c.title = "Focus Time"; c.body = "Break over — back to work"
+                nextPhase = .focus; nextDur = focusSecs
+            case .longBreak:
+                c.title = "Pomodoro Complete"; c.body = "All sessions done — great work!"
+                addTimerNotif(id: "pomodoro.\(idx)", in: t, content: c); break
+            default:
+                return
+            }
+            if phase == .longBreak { break }
+            addTimerNotif(id: "pomodoro.\(idx)", in: t, content: c)
+            idx += 1; t += nextDur; phase = nextPhase
+        }
+    }
+
+    func cancelPomodoroNotifications() {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(
+            withIdentifiers: (0..<24).map { "pomodoro.\($0)" })
+    }
+
+    private func addTimerNotif(id: String, in seconds: TimeInterval, content: UNMutableNotificationContent) {
+        guard seconds > 0 else { return }
+        UNUserNotificationCenter.current().add(UNNotificationRequest(
+            identifier: id, content: content,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)))
+    }
+
+    // MARK: Delegate
+
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .sound])
+        let id = notification.request.identifier
+        // Only surface alarm/snooze banners in foreground; timer alerts are handled in-app
+        completionHandler(id.hasPrefix("alarm.") || id.hasPrefix("snooze.") ? [.banner, .sound] : [])
     }
 
-    // When user taps the notification to open the app, surface the fired-alarm UI
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        if let id = UUID(uuidString: response.notification.request.identifier) {
+        let info = response.notification.request.content.userInfo
+        let alarmID = (info["alarmID"] as? String).flatMap(UUID.init(uuidString:))
+        if response.actionIdentifier == "SNOOZE", let id = alarmID {
+            let label = response.notification.request.content.title
+            scheduleSnooze(alarmID: id, label: label)
+        } else if let id = alarmID {
             DispatchQueue.main.async {
                 NotificationCenter.default.post(name: .alarmFired, object: nil, userInfo: ["id": id])
             }
@@ -642,19 +822,26 @@ struct TimerActivityAttributes: ActivityAttributes {
     func setAndStart(seconds: Int) {
         let d = TimeInterval(seconds); guard d > 0 else { return }
         guard !(state == .running && setDuration == d) else { return }
+        let wasRunning = state == .running
         setDuration = d; remaining = d
         endTime = Date().addingTimeInterval(d)
         state = .running; startTicking(); HapticManager.shared.start()
+        if !wasRunning { ScreenLock.acquire() }
         startLiveActivity(endDate: endTime!)
+        NotificationManager.shared.scheduleCountdownComplete(at: endTime!)
     }
     func togglePause() {
         switch state {
         case .running:
             cancellable?.cancel(); endTime = nil; state = .paused; HapticManager.shared.stop()
+            ScreenLock.release()
+            NotificationManager.shared.cancelCountdownNotifications()
             updateLiveActivity(isPaused: true)
         case .paused:
             endTime = Date().addingTimeInterval(remaining)
             state = .running; startTicking(); HapticManager.shared.start()
+            ScreenLock.acquire()
+            NotificationManager.shared.scheduleCountdownComplete(at: endTime!)
             updateLiveActivity(isPaused: false)
         default: break
         }
@@ -662,6 +849,7 @@ struct TimerActivityAttributes: ActivityAttributes {
     func reset() {
         cancellable?.cancel(); endTime = nil; remaining = 0; state = .idle
         HapticManager.shared.reset(); SoundManager.shared.stopLoop()
+        NotificationManager.shared.cancelCountdownNotifications()
         endLiveActivity()
     }
     private func startTicking() {
@@ -674,6 +862,8 @@ struct TimerActivityAttributes: ActivityAttributes {
         if left <= 0 {
             remaining = 0; cancellable?.cancel(); state = .complete
             HapticManager.shared.complete(); SoundManager.shared.startLoop()
+            ScreenLock.release()
+            NotificationManager.shared.cancelCountdownNotifications()
             endLiveActivity()
         } else {
             if remaining > 10 && left <= 10 { HapticManager.shared.warning(); SoundManager.shared.warning() }
@@ -862,11 +1052,13 @@ struct CountdownView: View {
         cancellable = Timer.publish(every: 0.02, tolerance: 0.004, on: .main, in: .common)
             .autoconnect().sink { [weak self] _ in self?.tick() }
         HapticManager.shared.start()
+        ScreenLock.acquire()
     }
     private func pause() {
         cancellable?.cancel()
         if let s = startDate { accumulated += Date().timeIntervalSince(s) }
         startDate = nil; isRunning = false; HapticManager.shared.stop()
+        ScreenLock.release()
     }
     private func tick() {
         guard let s = startDate else { return }
@@ -974,10 +1166,18 @@ struct StopwatchView: View {
     func start() {
         guard workSecs > 0 else { return }
         currentRound = 1; beginPhase(.work); HapticManager.shared.start()
+        ScreenLock.acquire()
+        if let end = endTime {
+            NotificationManager.shared.scheduleIntervalNotifications(
+                currentPhaseEndTime: end, isWork: true, currentRound: 1,
+                workSecs: workSecs, restSecs: restSecs, totalRounds: totalRounds)
+        }
     }
     func stop() {
         cancellable?.cancel(); phase = .idle; currentRound = 0; remaining = 0
         HapticManager.shared.reset(); SoundManager.shared.stopLoop()
+        ScreenLock.release()
+        NotificationManager.shared.cancelIntervalNotifications()
     }
     private func beginPhase(_ next: IPhase) {
         phase = next
@@ -1191,13 +1391,26 @@ struct IntervalView: View {
     }
     var sessionIndexInCycle: Int { completedSessions % sessionsPerLong }
 
-    func start() { completedSessions = 0; isPaused = false; beginPhase(.focus); HapticManager.shared.start() }
+    func start() {
+        completedSessions = 0; isPaused = false; beginPhase(.focus); HapticManager.shared.start()
+        ScreenLock.acquire()
+    }
     func togglePause() {
         if isPaused {
             isPaused = false; endTime = Date().addingTimeInterval(remaining)
             startTicking(); HapticManager.shared.start()
+            ScreenLock.acquire()
+            if let end = endTime {
+                NotificationManager.shared.schedulePomodoroNotifications(
+                    currentPhaseEndTime: end, currentPhase: phase,
+                    completedSessions: completedSessions,
+                    focusMin: focusMinutes, shortBreakMin: shortBreakMinutes,
+                    longBreakMin: longBreakMinutes, sessionsPerLong: sessionsPerLong)
+            }
         } else {
             isPaused = true; cancellable?.cancel(); endTime = nil; HapticManager.shared.stop()
+            ScreenLock.release()
+            NotificationManager.shared.cancelPomodoroNotifications()
         }
     }
     func skip() {
@@ -1207,6 +1420,8 @@ struct IntervalView: View {
     func stop() {
         cancellable?.cancel(); phase = .idle; remaining = 0; completedSessions = 0
         isPaused = false; HapticManager.shared.reset(); SoundManager.shared.stopLoop()
+        ScreenLock.release()
+        NotificationManager.shared.cancelPomodoroNotifications()
     }
     private func beginPhase(_ next: PPhase) {
         phase = next; isPaused = false
@@ -1218,6 +1433,11 @@ struct IntervalView: View {
         case .idle, .complete: return
         }
         endTime = Date().addingTimeInterval(dur); remaining = dur; startTicking()
+        NotificationManager.shared.schedulePomodoroNotifications(
+            currentPhaseEndTime: endTime!, currentPhase: next,
+            completedSessions: completedSessions,
+            focusMin: focusMinutes, shortBreakMin: shortBreakMinutes,
+            longBreakMin: longBreakMinutes, sessionsPerLong: sessionsPerLong)
     }
     private func startTicking() {
         cancellable = Timer.publish(every: 1.0/30.0, tolerance: 0.004, on: .main, in: .common)
@@ -1243,6 +1463,8 @@ struct IntervalView: View {
         case .longBreak:
             phase = .complete; remaining = 0; isPaused = false; endTime = nil
             HapticManager.shared.complete(); SoundManager.shared.startLoop()
+            ScreenLock.release()
+            NotificationManager.shared.cancelPomodoroNotifications()
         case .idle, .complete: break
         }
     }
@@ -1464,20 +1686,25 @@ struct Alarm: Identifiable, Codable, Equatable {
     var enabled: Bool
     var label: String = ""
     var colorHex: String = "FF9500"
+    // Calendar weekday numbers: 1=Sun 2=Mon 3=Tue 4=Wed 5=Thu 6=Fri 7=Sat
+    // Empty = repeat every day
+    var repeatDays: [Int] = []
 
-    init(id: UUID = UUID(), hour: Int, minute: Int, enabled: Bool, label: String = "", colorHex: String = "FF9500") {
+    init(id: UUID = UUID(), hour: Int, minute: Int, enabled: Bool,
+         label: String = "", colorHex: String = "FF9500", repeatDays: [Int] = []) {
         self.id = id; self.hour = hour; self.minute = minute; self.enabled = enabled
-        self.label = label; self.colorHex = colorHex
+        self.label = label; self.colorHex = colorHex; self.repeatDays = repeatDays
     }
-    enum CodingKeys: String, CodingKey { case id, hour, minute, enabled, label, colorHex }
+    enum CodingKeys: String, CodingKey { case id, hour, minute, enabled, label, colorHex, repeatDays }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
         hour = try c.decode(Int.self, forKey: .hour)
         minute = try c.decode(Int.self, forKey: .minute)
         enabled = try c.decode(Bool.self, forKey: .enabled)
-        label    = (try? c.decodeIfPresent(String.self, forKey: .label))    ?? ""
-        colorHex = (try? c.decodeIfPresent(String.self, forKey: .colorHex)) ?? "FF9500"
+        label      = (try? c.decodeIfPresent(String.self,  forKey: .label))      ?? ""
+        colorHex   = (try? c.decodeIfPresent(String.self,  forKey: .colorHex))   ?? "FF9500"
+        repeatDays = (try? c.decodeIfPresent([Int].self,   forKey: .repeatDays)) ?? []
     }
 }
 
@@ -1557,6 +1784,27 @@ struct AlarmRow: View {
                     }
                 }
                 .padding(.horizontal, 18).padding(.bottom, 14)
+                Rectangle().fill(Color.white.opacity(0.08)).frame(height: 0.5).padding(.horizontal, 14)
+                HStack(spacing: 0) {
+                    ForEach(Array(zip([1,2,3,4,5,6,7], ["S","M","T","W","T","F","S"])), id: \.0) { day, label in
+                        let active = alarm.repeatDays.isEmpty || alarm.repeatDays.contains(day)
+                        Button {
+                            toggleDay(day)
+                            onSave()
+                        } label: {
+                            Text(label)
+                                .font(.system(size: 10, weight: .semibold))
+                                .tracking(0.5)
+                                .foregroundColor(active ? cardColor : Color.white.opacity(0.22))
+                                .frame(maxWidth: .infinity).padding(.vertical, 8)
+                                .background(active ? cardColor.opacity(0.15) : Color.clear)
+                        }
+                        .buttonStyle(.plain)
+                        .animation(.easeOut(duration: 0.12), value: active)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .padding(.horizontal, 14).padding(.bottom, 10)
             }
         }
         .frame(width: isExpanded ? 300 : 240)
@@ -1609,6 +1857,19 @@ struct AlarmRow: View {
                 HapticManager.shared.tick()
             }
             .onEnded { _ in guard !isExpanded else { return }; minDragging = false; minPrev = 0; onSave() }
+    }
+
+    private func toggleDay(_ day: Int) {
+        if alarm.repeatDays.isEmpty {
+            alarm.repeatDays = [1,2,3,4,5,6,7].filter { $0 != day }
+        } else if let idx = alarm.repeatDays.firstIndex(of: day) {
+            alarm.repeatDays.remove(at: idx)
+            if alarm.repeatDays.isEmpty { alarm.repeatDays = [] } // stays empty = every day
+        } else {
+            alarm.repeatDays.append(day)
+            if Set(alarm.repeatDays) == Set(1...7) { alarm.repeatDays = [] }
+        }
+        HapticManager.shared.tick()
     }
 }
 
@@ -1988,13 +2249,21 @@ struct ClockView: View {
             Image(systemName: "alarm")
                 .font(.system(size: 52, weight: .thin))
                 .foregroundColor(accent)
-            GlassCapsuleButton(label: "DISMISS") {
-                firedAlarmID = nil
-                if let i = alarms.firstIndex(where: { $0.id == id }) {
-                    alarms[i].enabled = false
-                    saveAlarms()
+            HStack(spacing: 14) {
+                GlassCapsuleButton(label: "SNOOZE") {
+                    let label = alarms.first { $0.id == id }?.label ?? ""
+                    NotificationManager.shared.scheduleSnooze(alarmID: id, label: label)
+                    firedAlarmID = nil
+                    SoundManager.shared.stopLoop()
                 }
-                SoundManager.shared.stopLoop()
+                GlassCapsuleButton(label: "DISMISS") {
+                    firedAlarmID = nil
+                    if let i = alarms.firstIndex(where: { $0.id == id }) {
+                        alarms[i].enabled = false
+                        saveAlarms()
+                    }
+                    SoundManager.shared.stopLoop()
+                }
             }
         }
     }
