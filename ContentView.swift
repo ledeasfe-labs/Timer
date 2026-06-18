@@ -616,7 +616,7 @@ struct ScreenBorderRing: View {
             }
             .frame(width: w, height: h)
             .position(x: geo.size.width / 2, y: geo.size.height / 2)
-            .animation(.linear(duration: 1.0 / 30.0), value: p)
+            .animation(.linear(duration: 1.0 / 60.0), value: p)
             .onChange(of: pulsing) { _, isPulsing in
                 if isPulsing {
                     withAnimation(.easeInOut(duration: 0.65).repeatForever(autoreverses: true)) { glow = true }
@@ -853,7 +853,7 @@ struct TimerActivityAttributes: ActivityAttributes {
         endLiveActivity()
     }
     private func startTicking() {
-        cancellable = Timer.publish(every: 1.0/30.0, tolerance: 0.004, on: .main, in: .common)
+        cancellable = Timer.publish(every: 1.0/60.0, tolerance: 0.002, on: .main, in: .common)
             .autoconnect().sink { [weak self] _ in self?.tick() }
     }
     private func tick() {
@@ -924,7 +924,7 @@ struct CountdownView: View {
             if touchCount > 0 && pendingSeconds > 0 {
                 RadialGradient(colors: [accent.opacity(0.06), .clear],
                                center: .center, startRadius: 0, endRadius: 240)
-                    .ignoresSafeArea().allowsHitTesting(false)
+                .ignoresSafeArea().allowsHitTesting(false)
             }
             VStack(spacing: 14) {
                 Spacer()
@@ -934,7 +934,7 @@ struct CountdownView: View {
                     .gyroLeveled()
                 Text(
                     touchCount >= 2    ? "TWO FINGER — HOURS" :
-                    pendingSeconds == 0 ? "DRAG TO SET" : "RELEASE TO START"
+                        pendingSeconds == 0 ? "DRAG TO SET" : "RELEASE TO START"
                 )
                 .font(Theme.label).foregroundColor(Theme.dim).tracking(3)
                 Spacer()
@@ -982,7 +982,7 @@ struct CountdownView: View {
             )
             RadialGradient(colors: [accent.opacity(0.05), .clear],
                            center: .center, startRadius: 0, endRadius: 220)
-                .allowsHitTesting(false)
+            .allowsHitTesting(false)
             VStack(spacing: 20) {
                 Spacer()
                 activeDisplay.gyroLeveled()
@@ -1183,7 +1183,7 @@ struct StopwatchView: View {
         phase = next
         let dur = next == .work ? workSecs : restSecs
         endTime = Date().addingTimeInterval(dur); remaining = dur
-        cancellable = Timer.publish(every: 1.0/30.0, tolerance: 0.004, on: .main, in: .common)
+        cancellable = Timer.publish(every: 1.0/60.0, tolerance: 0.002, on: .main, in: .common)
             .autoconnect().sink { [weak self] _ in self?.tick() }
     }
     private func tick() {
@@ -1248,7 +1248,7 @@ struct DragSetCard: View {
                 .overlay(RoundedRectangle(cornerRadius: 20).stroke(
                     LinearGradient(
                         colors: isDragging ? [color.opacity(0.45), color.opacity(0.12)]
-                                           : [Color.white.opacity(0.13), Color.white.opacity(0.03)],
+                        : [Color.white.opacity(0.13), Color.white.opacity(0.03)],
                         startPoint: .topLeading, endPoint: .bottomTrailing
                     ), lineWidth: 0.8
                 ))
@@ -1286,6 +1286,7 @@ struct IntervalView: View {
     @AppStorage("accentHex") private var accentHex = "FF9500"
     private var accent: Color { Color(hex: accentHex) }
     private var restColor: Color { Color(hex: "5AC8FA") }
+    @Environment(\.horizontalSizeClass) private var hSizeClass
 
     var body: some View {
         ZStack {
@@ -1303,28 +1304,34 @@ struct IntervalView: View {
     }
 
     private var setupContent: some View {
-        VStack(spacing: 22) {
-            Spacer()
-            HStack(spacing: 12) {
-                DragSetCard(label: "WORK", color: accent, totalSeconds: $timer.workSecs, maxSeconds: 3599)
-                DragSetCard(label: "REST", color: restColor, totalSeconds: $timer.restSecs, maxSeconds: 3599)
-            }.padding(.horizontal, 24)
+        GeometryReader { geo in
+            let phoneLS = geo.size.width > geo.size.height && hSizeClass == .compact
+            VStack(spacing: phoneLS ? 12 : 22) {
+                if !phoneLS { Spacer() }
+                HStack(spacing: 12) {
+                    DragSetCard(label: "WORK", color: accent, totalSeconds: $timer.workSecs, maxSeconds: 3599)
+                    DragSetCard(label: "REST", color: restColor, totalSeconds: $timer.restSecs, maxSeconds: 3599)
+                }.padding(.horizontal, 24)
 
-            HStack(spacing: 28) {
-                GlassButton(icon: "minus", size: 40, iconColor: Theme.dim) {
-                    if timer.totalRounds > 1 { timer.totalRounds -= 1; HapticManager.shared.tick() }
-                }
-                VStack(spacing: 2) {
-                    Text("\(timer.totalRounds)").font(Theme.display(40)).foregroundColor(Theme.text)
-                    Text("ROUNDS").font(Theme.label).foregroundColor(Theme.dim).tracking(2)
-                }.frame(minWidth: 72)
-                GlassButton(icon: "plus", size: 40, iconColor: Theme.dim) {
-                    if timer.totalRounds < 99 { timer.totalRounds += 1; HapticManager.shared.tick() }
-                }
-            }.padding(.vertical, 4)
+                HStack(spacing: 28) {
+                    GlassButton(icon: "minus", size: 40, iconColor: Theme.dim) {
+                        if timer.totalRounds > 1 { timer.totalRounds -= 1; HapticManager.shared.tick() }
+                    }
+                    VStack(spacing: 2) {
+                        Text("\(timer.totalRounds)").font(Theme.display(40)).foregroundColor(Theme.text)
+                        Text("ROUNDS").font(Theme.label).foregroundColor(Theme.dim).tracking(2)
+                    }.frame(minWidth: 72)
+                    GlassButton(icon: "plus", size: 40, iconColor: Theme.dim) {
+                        if timer.totalRounds < 99 { timer.totalRounds += 1; HapticManager.shared.tick() }
+                    }
+                }.padding(.vertical, phoneLS ? 0 : 4)
 
-            GlassCapsuleButton(label: "BEGIN", action: timer.start)
-            Spacer()
+                GlassCapsuleButton(label: "BEGIN", action: timer.start)
+                if !phoneLS { Spacer() }
+            }
+            .padding(.top, phoneLS ? 60 : 0)
+            .padding(.bottom, phoneLS ? 12 : 0)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -1440,7 +1447,7 @@ struct IntervalView: View {
             longBreakMin: longBreakMinutes, sessionsPerLong: sessionsPerLong)
     }
     private func startTicking() {
-        cancellable = Timer.publish(every: 1.0/30.0, tolerance: 0.004, on: .main, in: .common)
+        cancellable = Timer.publish(every: 1.0/60.0, tolerance: 0.002, on: .main, in: .common)
             .autoconnect().sink { [weak self] _ in self?.tick() }
     }
     private func tick() {
@@ -1511,8 +1518,8 @@ struct DragRow: View {
                     guard Swift.abs(delta) > 0.8 else { return }
                     let step = Swift.abs(delta) > 12 ? 5 : 1
                     let next = delta > 0
-                        ? Swift.min(range.upperBound, value + step)
-                        : Swift.max(range.lowerBound, value - step)
+                    ? Swift.min(range.upperBound, value + step)
+                    : Swift.max(range.lowerBound, value - step)
                     if next != value { value = next; HapticManager.shared.tick() }
                 }
                 .onEnded { _ in isDragging = false; prevTranslation = 0 }
@@ -1529,6 +1536,7 @@ struct PomodoroView: View {
     @StateObject private var timer = PomodoroTimer()
     @AppStorage("accentHex") private var accentHex = "FF9500"
     private var accent: Color { Color(hex: accentHex) }
+    @Environment(\.horizontalSizeClass) private var hSizeClass
 
     var body: some View {
         ZStack {
@@ -1543,26 +1551,50 @@ struct PomodoroView: View {
         .animation(.easeInOut(duration: 0.2),  value: timer.isPaused)
     }
 
-    private var setupContent: some View {
+    private var settingsGroup: some View {
         VStack(spacing: 0) {
-            Spacer()
-            focusDragPreview.padding(.bottom, 32)
-            VStack(spacing: 0) {
-                DragRow(label: "FOCUS",       value: $timer.focusMinutes,      range: 1...99, unit: "min")
-                DragRow(label: "SHORT BREAK", value: $timer.shortBreakMinutes, range: 1...30, unit: "min")
-                DragRow(label: "LONG BREAK",  value: $timer.longBreakMinutes,  range: 1...60, unit: "min")
-                DragRow(label: "SESSIONS",    value: $timer.sessionsPerLong,   range: 1...12, unit: "")
+            DragRow(label: "FOCUS",       value: $timer.focusMinutes,      range: 1...99, unit: "min")
+            DragRow(label: "SHORT BREAK", value: $timer.shortBreakMinutes, range: 1...30, unit: "min")
+            DragRow(label: "LONG BREAK",  value: $timer.longBreakMinutes,  range: 1...60, unit: "min")
+            DragRow(label: "SESSIONS",    value: $timer.sessionsPerLong,   range: 1...12, unit: "")
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.white.opacity(0.045))
+                .overlay(RoundedRectangle(cornerRadius: 20)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 0.6))
+        )
+    }
+
+    private var setupContent: some View {
+        GeometryReader { geo in
+            let landscape = geo.size.width > geo.size.height
+            let useCompact = landscape && hSizeClass == .compact
+            if useCompact {
+                HStack(alignment: .center, spacing: 0) {
+                    focusDragPreview
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack(spacing: 16) {
+                        settingsGroup.padding(.horizontal, 12)
+                        GlassCapsuleButton(label: "FOCUS", action: timer.start)
+                    }
+                    .frame(maxWidth: geo.size.width * 0.5)
+                    .padding(.vertical, 12)
+                }
+                .padding(.top, 56)
+                .padding(.bottom, 16)
+                .frame(width: geo.size.width, height: geo.size.height)
+            } else {
+                VStack(spacing: 0) {
+                    Spacer()
+                    focusDragPreview.padding(.bottom, 32)
+                    settingsGroup.padding(.horizontal, 24)
+                    Spacer().frame(height: 28)
+                    GlassCapsuleButton(label: "FOCUS", action: timer.start)
+                    Spacer()
+                }
+                .frame(width: geo.size.width, height: geo.size.height)
             }
-            .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color.white.opacity(0.045))
-                    .overlay(RoundedRectangle(cornerRadius: 20)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 0.6))
-            )
-            .padding(.horizontal, 24)
-            Spacer().frame(height: 28)
-            GlassCapsuleButton(label: "FOCUS", action: timer.start)
-            Spacer()
         }
     }
 
@@ -1589,8 +1621,8 @@ struct PomodoroView: View {
                     guard Swift.abs(delta) > 0.8 else { return }
                     let step = Swift.abs(delta) > 12 ? 5 : 1
                     let next = delta > 0
-                        ? Swift.min(99, timer.focusMinutes + step)
-                        : Swift.max(1,  timer.focusMinutes - step)
+                    ? Swift.min(99, timer.focusMinutes + step)
+                    : Swift.max(1,  timer.focusMinutes - step)
                     if next != timer.focusMinutes { timer.focusMinutes = next; HapticManager.shared.tick() }
                 }
                 .onEnded { _ in focusIsDragging = false; focusPrevTranslation = 0 }
@@ -1603,7 +1635,7 @@ struct PomodoroView: View {
                              pulsing: timer.remaining <= 10 && timer.remaining > 0)
             RadialGradient(colors: [phaseColor.opacity(0.05), .clear],
                            center: .center, startRadius: 0, endRadius: 220)
-                .allowsHitTesting(false)
+            .allowsHitTesting(false)
             VStack(spacing: 0) {
                 Spacer()
                 HStack(spacing: 6) {
@@ -1864,7 +1896,7 @@ struct AlarmRow: View {
             alarm.repeatDays = [1,2,3,4,5,6,7].filter { $0 != day }
         } else if let idx = alarm.repeatDays.firstIndex(of: day) {
             alarm.repeatDays.remove(at: idx)
-            if alarm.repeatDays.isEmpty { alarm.repeatDays = [] } // stays empty = every day
+            if alarm.repeatDays.isEmpty { alarm.repeatDays = [] }
         } else {
             alarm.repeatDays.append(day)
             if Set(alarm.repeatDays) == Set(1...7) { alarm.repeatDays = [] }
@@ -1944,15 +1976,15 @@ struct WorldClockRow: View {
         let s = tz.secondsFromGMT(for: now)
         let h = s / 3600; let m = abs(s % 3600) / 60
         return m == 0
-            ? (h >= 0 ? "UTC+\(h)" : "UTC\(h)")
-            : (h >= 0 ? "UTC+\(h):\(String(format: "%02d", m))" : "UTC\(h):\(String(format: "%02d", m))")
+        ? (h >= 0 ? "UTC+\(h)" : "UTC\(h)")
+        : (h >= 0 ? "UTC+\(h):\(String(format: "%02d", m))" : "UTC\(h):\(String(format: "%02d", m))")
     }
 
     private var cityName: String {
         worldTimezones.first { $0.id == clock.timeZoneIdentifier }?.city
-            ?? clock.timeZoneIdentifier.components(separatedBy: "/").last?
-                .replacingOccurrences(of: "_", with: " ")
-            ?? clock.timeZoneIdentifier
+        ?? clock.timeZoneIdentifier.components(separatedBy: "/").last?
+            .replacingOccurrences(of: "_", with: " ")
+        ?? clock.timeZoneIdentifier
     }
 
     var body: some View {
@@ -2065,6 +2097,7 @@ struct ClockView: View {
     @State private var firedAlarmID: UUID? = nil
     @State private var expandedAlarmID: UUID? = nil
     @State private var expandedClockID: UUID? = nil
+    @Environment(\.horizontalSizeClass) private var hSizeClass
 
     @AppStorage("accentHex") private var accentHex = "FF9500"
     private var accent: Color { Color(hex: accentHex) }
@@ -2103,23 +2136,28 @@ struct ClockView: View {
     }
 
     private var mainContent: some View {
-        ZStack(alignment: .bottom) {
-            Text(timeString)
-                .font(Theme.display(86))
-                .foregroundColor(Theme.text)
-                .monospacedDigit()
-                .gyroLeveled()
-                .frame(minHeight: 110)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            VStack(spacing: 8) {
-                worldClockArea
-                alarmArea
+        GeometryReader { geo in
+            let landscape = geo.size.width > geo.size.height
+            let phoneLS = landscape && hSizeClass == .compact
+            ZStack(alignment: .bottom) {
+                Text(timeString)
+                    .font(Theme.display(phoneLS ? 52 : 86))
+                    .foregroundColor(Theme.text)
+                    .monospacedDigit()
+                    .gyroLeveled()
+                    .frame(minHeight: phoneLS ? 60 : 110)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 6) {
+                    worldClockArea(width: geo.size.width)
+                    alarmArea(width: geo.size.width)
+                }
+                .padding(.bottom, phoneLS ? 50 : 80)
             }
-            .padding(.bottom, 80)
+            .frame(width: geo.size.width, height: geo.size.height)
         }
     }
 
-    private var alarmArea: some View {
+    private func alarmArea(width: CGFloat) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 ForEach(alarms) { alarm in
@@ -2176,12 +2214,12 @@ struct ClockView: View {
                 }
             }
             .padding(.horizontal, 24)
-            .frame(minWidth: UIScreen.main.bounds.width, alignment: .center)
+            .frame(minWidth: width, alignment: .center)
         }
         .scrollDismissesKeyboard(.immediately)
     }
 
-    private var worldClockArea: some View {
+    private func worldClockArea(width: CGFloat) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 ForEach(worldClocks) { wc in
@@ -2239,7 +2277,7 @@ struct ClockView: View {
                 }
             }
             .padding(.horizontal, 24)
-            .frame(minWidth: UIScreen.main.bounds.width, alignment: .center)
+            .frame(minWidth: width, alignment: .center)
         }
         .scrollDismissesKeyboard(.immediately)
     }
@@ -2414,9 +2452,9 @@ struct SettingsView: View {
                                     Spacer()
                                     Text(pitchSemitones == 0 ? "default"
                                          : (pitchSemitones > 0 ? "+\(pitchSemitones)" : "\(pitchSemitones)") + " st")
-                                        .font(.system(size: 10, weight: .light, design: .rounded))
-                                        .foregroundColor(pitchSemitones == 0 ? Theme.dim.opacity(0.4) : accent)
-                                        .monospacedDigit()
+                                    .font(.system(size: 10, weight: .light, design: .rounded))
+                                    .foregroundColor(pitchSemitones == 0 ? Theme.dim.opacity(0.4) : accent)
+                                    .monospacedDigit()
                                 }
                                 GeometryReader { geo in
                                     let w = geo.size.width
@@ -2494,7 +2532,7 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: – Helpers
+    // MARK: - Helpers
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
@@ -2858,5 +2896,6 @@ struct ContentView: View {
                 }
             }
         }
+        .gesture(swipeGesture)
     }
 }
